@@ -1,1 +1,158 @@
+@import "@fontsource/roboto/400.css";
+@import "@fontsource/roboto/500.css";
+@import "@fontsource/roboto/700.css";
+@import "@fontsource/audiowide/400.css";
+@import "@fontsource/anonymous-pro/400.css";
 @import "tailwindcss";
+
+/* Design tokens (see .claude/skills/design-system). Spacing rhythm 4/8/12/16/24/32.
+   --primary, --secondary, --glow and --radius are user-customisable (Settings > Appearance)
+   and are applied on <html> by src/lib/theme.ts. */
+:root {
+  --primary: #3b82f6;
+  --secondary: #8b5cf6;
+  --primary-contrast: #ffffff;
+  --glow: 0.5;
+  --radius: 10px;
+  --success: #16a34a;
+  --warning: #d97706;
+  --danger: #dc2626;
+
+  --bg: #eef1f8;
+  --surface: #ffffff;
+  --surface-2: #f3f5fb;
+  --border: #d5dbea;
+  --text: #111827;
+  --text-muted: #4b5578;
+  --grid: rgba(17, 24, 39, 0.05);
+  color-scheme: light;
+}
+
+:root[data-theme="dark"] {
+  --bg: #070a14;
+  --surface: #0f1426;
+  --surface-2: #151b33;
+  --border: #252d4d;
+  --text: #e8ecff;
+  --text-muted: #9aa5cc;
+  --grid: rgba(150, 170, 255, 0.06);
+  --success: #22c55e;
+  --warning: #f59e0b;
+  --danger: #f87171;
+  color-scheme: dark;
+}
+
+@theme inline {
+  --color-bg: var(--bg);
+  --color-surface: var(--surface);
+  --color-surface-2: var(--surface-2);
+  --color-border: var(--border);
+  --color-fg: var(--text);
+  --color-muted: var(--text-muted);
+  --color-primary: var(--primary);
+  --color-primary-fg: var(--primary-contrast);
+  --color-secondary: var(--secondary);
+  --color-success: var(--success);
+  --color-warning: var(--warning);
+  --color-danger: var(--danger);
+  /* Corner radius follows the user's radius setting. */
+  --radius-sm: calc(var(--radius) * 0.5);
+  --radius-md: var(--radius);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) * 1.4);
+  --font-sans: Roboto, "Segoe UI", system-ui, sans-serif;
+  --font-display: Audiowide, Roboto, system-ui, sans-serif;
+  --font-mono: "Anonymous Pro", "Cascadia Mono", ui-monospace, monospace;
+}
+
+html,
+body {
+  height: 100%;
+}
+body {
+  background: var(--bg);
+  color: var(--text);
+  font-family: var(--font-sans);
+  -webkit-font-smoothing: antialiased;
+}
+h1,
+h2 {
+  font-family: var(--font-display);
+  font-weight: 400;
+  letter-spacing: 0.04em;
+}
+
+/* Visible focus for keyboard users (WCAG 2.2 AA). */
+:focus-visible {
+  outline: 2px solid var(--primary);
+  outline-offset: 2px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  * {
+    transition: none !important;
+    animation: none !important;
+  }
+}
+
+@layer components {
+  .grid-bg {
+    background-image:
+      linear-gradient(var(--grid) 1px, transparent 1px),
+      linear-gradient(90deg, var(--grid) 1px, transparent 1px);
+    background-size: 32px 32px;
+  }
+  .brand-mark {
+    width: 32px;
+    height: 32px;
+    border-radius: var(--radius);
+    background: linear-gradient(135deg, var(--primary), var(--secondary));
+    box-shadow: 0 0 calc(36px * var(--glow)) color-mix(in srgb, var(--primary) calc(140% * var(--glow)), transparent);
+  }
+  .nav-item {
+    @apply flex items-center gap-3 rounded-md border border-transparent px-3 py-2.5 text-sm font-medium text-muted transition hover:bg-surface-2 hover:text-fg;
+  }
+  .nav-item[aria-current="page"] {
+    @apply text-fg;
+    background: color-mix(in srgb, var(--primary) 14%, var(--surface));
+    border-color: color-mix(in srgb, var(--primary) 55%, transparent);
+    box-shadow: 0 0 calc(16px * var(--glow)) color-mix(in srgb, var(--primary) 45%, transparent);
+  }
+  .nav-item[aria-current="page"] svg {
+    color: var(--primary);
+  }
+  .btn {
+    @apply inline-flex items-center gap-2 rounded-md border border-border bg-surface-2 px-3 py-1.5 text-sm font-medium text-fg transition hover:border-primary active:translate-y-px disabled:cursor-not-allowed disabled:opacity-50;
+  }
+  .btn-primary {
+    @apply border-transparent bg-primary text-primary-fg hover:brightness-110;
+    box-shadow: 0 0 calc(16px * var(--glow)) color-mix(in srgb, var(--primary) 60%, transparent);
+  }
+  .btn-danger {
+    @apply border-danger text-danger hover:bg-danger/10;
+  }
+  .input {
+    @apply w-full rounded-md border border-border bg-surface px-3 py-1.5 text-sm text-fg placeholder:text-muted;
+  }
+  .card {
+    @apply rounded-lg border border-border bg-surface;
+  }
+  .chip {
+    @apply inline-flex items-center rounded-full border border-border bg-surface-2 px-2 py-0.5 text-xs text-muted;
+  }
+  .seg-group {
+    @apply inline-flex overflow-hidden rounded-md border border-border;
+  }
+  .seg {
+    @apply bg-surface-2 px-4 py-2 text-sm hover:bg-primary/10 aria-pressed:bg-primary aria-pressed:text-primary-fg;
+  }
+  .seg + .seg {
+    @apply border-l border-border;
+  }
+}
+
+/* Stat values read as instruments: mono, accent colour. */
+.stat-value {
+  font-family: var(--font-mono);
+  color: var(--primary);
+}
