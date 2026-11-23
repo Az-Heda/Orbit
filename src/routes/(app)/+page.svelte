@@ -5,6 +5,7 @@
   import { activeTimers, getStats, type Stats, type TimerView } from "$lib/api/timers";
   import { fmtDuration, fmtHours, fmtTime } from "$lib/format";
   import { toast } from "$lib/stores/toast.svelte";
+  import GettingStarted from "$lib/components/GettingStarted.svelte";
 
   let items = $state<CalendarItem[]>([]);
   let stats = $state<Stats | null>(null);
@@ -32,6 +33,7 @@
     <h1 class="stat-value text-3xl">Today</h1>
     <p class="text-muted">{new Date().toLocaleDateString(undefined, { dateStyle: "full" })}</p>
   </header>
+  <GettingStarted />
   <div class="grid gap-4 md:grid-cols-3">
     <div class="card p-4"><p class="text-xs text-muted">Focus today</p><p class="stat-value text-3xl">{fmtHours(today?.focus_ms ?? 0)}</p></div>
     <div class="card p-4"><p class="text-xs text-muted">Completed today</p><p class="stat-value text-3xl">{today?.completed ?? 0}</p></div>

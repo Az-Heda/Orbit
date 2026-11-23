@@ -94,6 +94,23 @@ jobs:
         with:
           path: dist
           merge-multiple: true
+      - name: Checksums
+        run: |
+          (cd dist && sha256sum -- * > ../SHA256SUMS)
+          mv SHA256SUMS dist/SHA256SUMS
+          cat dist/SHA256SUMS
+      - name: Sign checksums (enables in-app updates)
+        env:
+          MINISIGN_SECRET_KEY: ${{ secrets.MINISIGN_SECRET_KEY }}
+        run: |
+          if [ -z "$MINISIGN_SECRET_KEY" ]; then
+            echo "::warning::MINISIGN_SECRET_KEY is not set: the release is unsigned, so Orbit will not install it automatically (it offers the release page instead)."
+            exit 0
+          fi
+          sudo apt-get update && sudo apt-get install -y minisign
+          printf '%s\n' "$MINISIGN_SECRET_KEY" > "$RUNNER_TEMP/minisign.key"
+          minisign -S -s "$RUNNER_TEMP/minisign.key" -m dist/SHA256SUMS -x dist/SHA256SUMS.minisig
+          rm -f "$RUNNER_TEMP/minisign.key"
       - name: Create GitHub release
         env:
           GH_TOKEN: ${{ github.token }}

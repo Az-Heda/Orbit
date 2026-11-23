@@ -48,6 +48,12 @@ src-tauri/migrations/ SQL migrations
 - **Automation rules**: a local engine with a closed set of triggers (task moved/created/completed, timer ended, time-based/cron, inbox item added) and actions (create task/note, move task, start timer, notify). Actions go through the same services as the UI and are logged to `activity_log` with actor `automation`. Guard against loops (rule-triggered changes must not retrigger the same rule; add a depth/rate limit) and allow disabling each rule. The AI may draft rules, but the user must confirm them. Planned (Phase 6): action chains and named notification channels (Windows/Telegram/Discord, each with a template); channel tokens/webhook URLs go in the credential store, never the DB/logs/frontend/AI, and delivery failures must not block the engine.
 - **Global search**: a search service over FTS5 indexes for tasks, events, notes, projects and inbox, returning typed results with a score. UI and the AI `search_all` tool share it. Keep it responsive (debounce, limit results) and keyboard-navigable.
 
+## Backups, import and updates (Phase 5)
+
+- **Backup format** is a SQLite file made with `VACUUM INTO '<literal>'` (`infrastructure/database/backup.rs`). Bound parameters silently do not work there, so the path is an escaped literal and the file's existence is checked afterwards. In-memory DBs write nothing. Backup file names carry a UTC stamp and kind (`auto|manual|pre-import|pre-update`); only `auto` is pruned.
+- **Import/restore** never touches the open DB: the verified file (integrity check, Orbit schema, migration version not newer than ours) is staged as `import-pending.db` and swapped in by `apply_pending_import` at startup *before* the pool opens, after a `pre-import` backup.
+- **Updater** (`services/update_service.rs`, `domain/update.rs`): custom, no Tauri updater plugin, no installers. Install only if the minisign signature of `SHA256SUMS` verifies against the key in `src-tauri/update-public-key.txt` and the zip's SHA-256 matches; download URLs must be under the project's release area over https; no key means "offer the release page". Swap is rename-based with rollback; take a `pre-update` backup first. The check sends no user data and is opt-out (`update.check_enabled`).
+
 ## Desktop shell and background work
 
 - **Events**: services publish `DomainEvent`s on an in-process bus *after* the mutation commits (task created/moved/completed, timer ended, inbox added). Only the automation engine and the UI relay subscribe; nothing may depend on events for correctness.

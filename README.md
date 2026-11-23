@@ -87,7 +87,9 @@ Key principles:
 
 ## Data
 
-`orbit.db` lives in the Windows app data directory. Tables: `projects`, `boards`, `columns`, `tasks`, `events`, `focus_sessions`, `settings`, `ai_conversations`, `ai_messages`, `activity_log`, plus `inbox_items`, `notes`, `note_links`, `external_calendars`, `task_dependencies`, `task_templates`, `ai_memories` and `automation_rules`. Subtasks use a parent reference on `tasks`. UUIDs everywhere, migrations, foreign keys, soft deletes, automatic backups.
+`orbit.db` lives in the Windows app data directory. Tables: `projects`, `boards`, `columns`, `tasks`, `events`, `focus_sessions`, `settings`, `ai_conversations`, `ai_messages`, `activity_log`, plus `inbox_items`, `notes`, `note_links`, `external_calendars`, `task_dependencies`, `task_templates`, `ai_memories` and `automation_rules`. Subtasks use a parent reference on `tasks`. UUIDs everywhere, migrations, foreign keys, soft deletes.
+
+**Backups and export.** Orbit snapshots the database daily into `backups/` next to it (keeps the latest 7 by default; configurable). Settings can also export everything to a `.db` file and import one: the file is verified, a safety backup is taken and the swap happens at the next start. Backups can be restored from the same list.
 
 ## AI tools
 
@@ -118,7 +120,11 @@ Declined: automatic time tracking from the active window, habit tracker, energy/
 
 Claude API usage is billed separately from a Claude subscription (Pro/Max does not include API credits).
 
-## Getting started
+## Using Orbit
+
+A "Getting started" panel on the Overview page walks through the basics (dismiss it once you know them). A short guide is in [docs/USER_GUIDE.md](docs/USER_GUIDE.md).
+
+## Getting started (development)
 
 Prerequisites: Rust toolchain, Node.js, [pnpm](https://pnpm.io), and the Tauri 2 prerequisites (on Windows: WebView2 and MSVC build tools; on Linux: `webkit2gtk-4.1`, GTK 3, libsoup 3, `libayatana-appindicator3` for the tray).
 
@@ -141,4 +147,8 @@ On Linux/WSL, `make windows` cross-compiles using `clang`, `lld`, `llvm`, the `x
 
 ## Releases
 
-Pushing a tag like `v1.0.0` (the commit must be on `main`, and the version must match `tauri.conf.json` and `Cargo.toml`) triggers the GitHub Actions release workflow. It builds Windows (`.zip` with `orbit.exe`) and Linux (`.tar.gz`) executables and attaches them to a GitHub release. There are no installers and no macOS builds. Planned: a built-in, opt-out update check that verifies a signed checksum and swaps the executable (see ROADMAP.md, Phase 5).
+Pushing a tag like `v1.0.0` (the commit must be on `main`, and the version must match `tauri.conf.json` and `Cargo.toml`) triggers the GitHub Actions release workflow. It builds Windows (`.zip` with `orbit.exe`) and Linux (`.tar.gz`) executables and attaches them to a GitHub release. There are no installers and no macOS builds. The workflow also publishes `SHA256SUMS` and, when the `MINISIGN_SECRET_KEY` secret is set, its minisign signature. See [docs/RELEASING.md](docs/RELEASING.md).
+
+### Updates
+
+Orbit checks GitHub Releases at startup and daily (opt-out in Settings, plus "Check now"; nothing about you is sent) and asks: Update / Later / Skip this version. Installing downloads the zip, verifies the signed checksum list against the public key embedded in the app and the zip's SHA-256, backs up your database, swaps `orbit.exe` by renaming (rolling back on failure) and restarts. No installer, no helper process. Windows only for now; without a configured signing key the app only offers the release page.

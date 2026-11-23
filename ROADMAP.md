@@ -97,19 +97,18 @@ All AI items below are tools in `infrastructure/ai/tools.rs` that go through the
 
 ## Phase 5: Polish and release
 
-- [ ] Automatic local backups
-- [ ] Export / import data
-- [ ] FTS5 search across tasks, projects and notes
-- [ ] Windows installer
-- [ ] Auto-update (custom, no installer or Tauri updater plugin, since releases are a plain `orbit.exe`; Windows only at first)
-  - [ ] Check the GitHub Releases API (`releases/latest`) on startup and daily, compare the tag to the running version with semver; unauthenticated, no user data, opt-out in Settings plus a "Check now" button
-  - [ ] Ask: dialog with version and release notes, buttons "Update", "Later" and "Skip this version" (skipped version stored in settings)
-  - [ ] Download the Windows zip asset to a temp folder next to the exe
-  - [ ] Verify: the release workflow also publishes `SHA256SUMS`, signed with an ed25519/minisign key (private key in GitHub Actions secrets, public key embedded in the app); refuse to install on any mismatch
-  - [ ] Swap without a helper script: rename `orbit.exe` to `orbit.exe.old`, move the new exe in, launch it and exit; the new version deletes `.old` on start; roll back on any failure; if the folder is not writable, fall back to opening the release page
-  - [ ] Back up `orbit.db` before the first launch of a new version (depends on the automatic backups item)
+- [x] Automatic local backups: daily snapshot (`VACUUM INTO`) of `orbit.db` into `backups/`, keep the latest N (setting, default 7), manual / pre-import / pre-update backups are never pruned
+- [x] Export / import data: export writes a SQLite snapshot to a chosen `.db` file; import (or restoring a backup) verifies the file (integrity check, Orbit schema, not newer than this version), takes a safety backup and swaps it in at the next start. Not JSON/CSV: the format is the database itself
+- [x] FTS5 search across tasks, projects and notes (done in Phase 2: global search over FTS5 indexes kept in sync by triggers)
+- [x] Auto-update (custom, no installer or Tauri updater plugin, since releases are a plain `orbit.exe`; Windows only at first). Implemented and unit-tested on Linux against a fake release source; the Windows swap and a real signed release are unverified
+  - [x] Check the GitHub Releases API (`releases/latest`) on startup and daily, compare the tag to the running version with semver; unauthenticated, no user data, opt-out in Settings plus a "Check now" button
+  - [x] Ask: dialog with version and release notes, buttons "Update", "Later" and "Skip this version" (skipped version stored in settings)
+  - [x] Download the Windows zip asset (and the signed checksum list)
+  - [x] Verify: the release workflow publishes `SHA256SUMS` and a minisign signature (private key in the `MINISIGN_SECRET_KEY` Actions secret); the app embeds the public key (`src-tauri/update-public-key.txt`) and refuses to install on any mismatch. **Needs a one-time key setup by the maintainer, see docs/RELEASING.md; until then the app only offers the release page**
+  - [x] Swap without a helper script: rename `orbit.exe` to `orbit.exe.old`, move the new exe in, launch it and exit; the new version deletes `.old` on start; roll back on any failure; if the folder is not writable, fall back to opening the release page
+  - [x] Back up `orbit.db` before installing an update (`pre-update` backup)
   - [ ] Later: Linux (`orbit` tar.gz) with the same flow; code signing against SmartScreen warnings
-- [ ] Documentation and onboarding
+- [x] Documentation and onboarding: dismissible "Getting started" panel on the Overview page (`onboarding.done` setting), docs/USER_GUIDE.md, docs/RELEASING.md, README usage section
 
 ## Phase 6: Automation expansion
 
@@ -122,7 +121,7 @@ All AI items below are tools in `infrastructure/ai/tools.rs` that go through the
 
 ## MVP definition
 
-Phases 0 to 3 plus backups and export/import from Phase 5.
+Phases 0 to 3 plus Phase 5 (backups, export/import, updates, onboarding). Orbit ships as a single plain executable (`orbit.exe`); there is no installer, now or planned.
 
 ## Future / not planned yet
 
