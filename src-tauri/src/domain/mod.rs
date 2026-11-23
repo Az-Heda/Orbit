@@ -1,2 +1,11 @@
 pub mod activity;
+pub mod calendar;
+pub mod ics;
+pub mod kanban;
+pub mod notes;
+pub mod recurrence;
+pub mod search;
 pub mod settings;
+pub mod stats;
+pub mod timers;
+pub mod validation;

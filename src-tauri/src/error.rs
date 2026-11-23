@@ -8,6 +8,9 @@ pub enum DomainError {
     Validation(String),
     #[error("{entity} not found: {id}")]
     NotFound { entity: &'static str, id: String },
+    /// The action is allowed but needs explicit user confirmation (retry with `force`).
+    #[error("confirmation required: {0}")]
+    RequiresConfirmation(String),
     #[error("storage error: {0}")]
     Storage(String),
 }
@@ -32,6 +35,7 @@ impl Serialize for AppError {
         let kind = match self.0 {
             DomainError::Validation(_) => "validation",
             DomainError::NotFound { .. } => "not_found",
+            DomainError::RequiresConfirmation(_) => "requires_confirmation",
             DomainError::Storage(_) => "storage",
         };
         let mut st = s.serialize_struct("AppError", 2)?;

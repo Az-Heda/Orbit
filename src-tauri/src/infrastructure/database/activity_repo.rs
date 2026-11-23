@@ -71,3 +71,37 @@ impl ActivityRepository for SqliteActivityRepository {
         .await?)
     }
 }
+
+/// Log a create/update/delete of a serialisable entity inside the caller's transaction.
+#[allow(clippy::too_many_arguments)]
+pub(crate) async fn log_change<B: serde::Serialize, A: serde::Serialize>(
+    conn: &mut SqliteConnection,
+    entity_type: &'static str,
+    entity_id: &str,
+    action: &'static str,
+    actor: crate::domain::activity::Actor,
+    before: Option<&B>,
+    after: Option<&A>,
+    batch_id: Option<&str>,
+) -> DomainResult<()> {
+    let to_json = |v: Result<String, serde_json::Error>| {
+        v.map_err(|e| crate::error::DomainError::Storage(e.to_string()))
+    };
+    record(
+        conn,
+        &NewActivity {
+            entity_type,
+            entity_id: entity_id.to_string(),
+            action,
+            actor,
+            before_json: before
+                .map(|b| to_json(serde_json::to_string(b)))
+                .transpose()?,
+            after_json: after
+                .map(|a| to_json(serde_json::to_string(a)))
+                .transpose()?,
+            batch_id: batch_id.map(str::to_string),
+        },
+    )
+    .await
+}

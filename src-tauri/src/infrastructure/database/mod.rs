@@ -1,7 +1,15 @@
 //! SQLite access. All SQL lives in this module tree (repositories).
 
 mod activity_repo;
+mod calendar_repo;
+mod note_repo;
+mod project_repo;
+mod search_repo;
 mod settings_repo;
+mod stats_repo;
+mod task_repo;
+mod template_repo;
+mod timer_repo;
 
 use std::path::Path;
 use std::str::FromStr;
@@ -11,7 +19,15 @@ use sqlx::SqlitePool;
 use sqlx::sqlite::{SqliteConnectOptions, SqliteJournalMode, SqlitePoolOptions, SqliteSynchronous};
 
 pub use activity_repo::{ActivityRepository, SqliteActivityRepository};
+pub use calendar_repo::{CalendarRepository, ImportEvent, SqliteCalendarRepository};
+pub use note_repo::{NoteRepository, SqliteNoteRepository};
+pub use project_repo::{ProjectRepository, SqliteProjectRepository};
+pub use search_repo::{SearchRepository, SqliteSearchRepository};
 pub use settings_repo::{SettingsRepository, SqliteSettingsRepository};
+pub use stats_repo::{SqliteStatsRepository, StatsRepository};
+pub use task_repo::{SqliteTaskRepository, TaskRepository};
+pub use template_repo::{SqliteTemplateRepository, TemplateRepository};
+pub use timer_repo::{SqliteTimerRepository, TimerRepository};
 
 use crate::error::DomainResult;
 
