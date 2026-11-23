@@ -60,9 +60,19 @@ src-tauri/migrations/ SQL migrations
 
 - Use tool use with a tool registry in `infrastructure/ai/`. Run the standard loop: send messages + tools, execute `tool_use` blocks, return `tool_result`, repeat until the model stops.
 - Make the model name configurable in settings; do not hardcode it in call sites.
-- Inject context (current date/time, timezone, active view, selected entity IDs) in the system prompt so "this" and "tomorrow" resolve correctly.
+- Inject context (current date/time, timezone, active view, selected entity IDs) in the new user turn (not the system prompt, see below) so "this" and "tomorrow" resolve correctly.
 - Stream responses to the frontend.
 - Before writing Claude API code, load the `claude-api` skill for current model IDs and parameters.
+
+### AI implementation notes (Phase 3)
+
+- Transport: `infrastructure/ai/client.rs` (`ModelClient` trait, SSE parser/accumulator, retries before the stream starts). Assistant content blocks (incl. thinking, with signatures) are stored raw in `ai_messages` and replayed unchanged. Thinking/effort are only sent for models that support them (`supports_adaptive`).
+- Tools live in `infrastructure/ai/tools.rs`: read tools run; write tools only `propose` (validate + preview) and are stored in `ai_proposals`. `apply` re-validates and runs the normal services with `Actor::Ai` inside `activity::BATCH.scope(proposal_id, ..)`, so every `activity_log` row of one proposal shares `batch_id` (the scope overrides repo-local batch ids). Undo (`AiRepository::undo_batch`) is all-or-nothing and refuses if an entity changed since.
+- **Keep request history append-only.** A thinking block's signature covers the system prompt, the tool set and every earlier message (and the model that wrote it), so the system prompt and `tools` are constants. Per-turn context (date/time, timezone, view, selected ids, unshared categories, memories when changed) is a leading text block of the new user message, never in `system`. Never rewrite stored messages; unsigned (truncated) thinking blocks are not stored. Switching `ai.model` mid-conversation just means older reasoning is not read by the new model.
+- Sharing categories (`SharingSettings`) are enforced when a tool runs (tools are all listed so the tool set stays constant; refused calls return an error). Timezone and ids from the UI are validated before they reach the prompt.
+- Proposal previews include service warnings (open subtasks, blockers) as a `Warning` row; the user's confirmation of that preview is what forces the apply past them.
+- Secrets go through `SecretStore` (Windows Credential Manager via `keyring-core`; elsewhere only `ANTHROPIC_API_KEY`). Commands can set/clear/report status, never return the key.
+- Apply/undo of proposals is the only AI path that mutates; do not add AI-only mutation logic.
 
 ## Conventions
 

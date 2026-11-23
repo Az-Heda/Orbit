@@ -4,7 +4,7 @@ A local-first personal productivity command center for Windows: **calendar + kan
 
 Orbit is not just another calendar or kanban app. The differentiator is a Claude-powered assistant that can read and modify your schedule and tasks through a controlled set of tools, with you approving every change that matters.
 
-> Status: Phases 0-2 (foundation, productivity core, desktop experience) implemented; Windows-side verification of the desktop shell pending. See [ROADMAP.md](ROADMAP.md) for the plan and [CLAUDE.md](CLAUDE.md) for development guidance.
+> Status: Phases 0-3 (foundation, productivity core, desktop experience, Claude copilot) implemented; Windows-side verification of the desktop shell and a live-API check of the copilot are pending. See [ROADMAP.md](ROADMAP.md) for the plan and [CLAUDE.md](CLAUDE.md) for development guidance.
 
 ## Vision
 
@@ -89,11 +89,17 @@ Key principles:
 
 `orbit.db` lives in the Windows app data directory. Tables: `projects`, `boards`, `columns`, `tasks`, `events`, `focus_sessions`, `settings`, `ai_conversations`, `ai_messages`, `activity_log`, plus `inbox_items`, `notes`, `note_links`, `external_calendars`, `task_dependencies`, `task_templates`, `ai_memories` and `automation_rules`. Subtasks use a parent reference on `tasks`. UUIDs everywhere, migrations, foreign keys, soft deletes, automatic backups.
 
-## AI tools (initial set)
+## AI tools
+
+Read tools run immediately. Every tool that changes data only creates a **proposal** (preview/diff) that you apply, reject or later undo from the chat; deletes are flagged. What the assistant can read is set per category in Settings (tasks, calendar, notes, inbox, memories; notes and inbox are off by default).
+
+Initial set:
 
 `get_schedule`, `get_tasks`, `create_event`, `update_event`, `create_task`, `move_task`, `delete_task`, `start_timer`.
 
-Added by accepted ideas: `search_notes`, `get_note`, `create_note`, `get_inbox`, `triage_inbox_item`, `add_dependency`, `create_subtask`, `create_task_from_template`, `search_all`, `remember` / `forget` (AI memory, user-editable).
+Added by accepted ideas: `search_notes`, `get_note`, `create_note`, `get_inbox`, `triage_inbox_item`, `add_dependency`, `create_subtask`, `create_task_from_template`, `search_all`, `remember` / `forget` (AI memory, user-editable), `list_projects`, `list_templates`, `update_task`, `delete_event`, `draft_automation_rule`.
+
+Setting the API key: paste it in Settings → Assistant (stored in the Windows Credential Manager). On non-Windows builds only the `ANTHROPIC_API_KEY` environment variable is used. The model name and effort are settings (default `claude-opus-5-5`, effort `medium`).
 
 ## Ideas parked for later
 

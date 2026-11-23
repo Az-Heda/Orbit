@@ -61,22 +61,24 @@ Logic (inbox, reminders, automation, timers, sleep catch-up) is unit-tested on L
 
 ## Phase 3: Claude copilot (MVP AI)
 
-- [ ] Claude client (`reqwest` + `serde`), streaming
-- [ ] API key storage in Windows Credential Manager
-- [ ] Tool registry with JSON schemas and validation
-- [ ] Read tools: `get_schedule`, `get_tasks`
-- [ ] Write tools: `create_event`, `update_event`, `create_task`, `move_task`, `delete_task`, `start_timer`
-- [ ] Confirmation previews / diffs; mandatory confirmation for delete and bulk actions
-- [ ] Contextual awareness (current board / selected task / current date and timezone)
-- [ ] Chat UI + persisted conversation history
-- [ ] Configurable AI context sharing (privacy settings)
-- [ ] Undo of AI actions via `activity_log`
-- [ ] Note tools: `search_notes`, `get_note`, `create_note` (respecting context-sharing settings)
-- [ ] Inbox tools: `get_inbox`, `triage_inbox_item` (AI files captured items as tasks/events, with preview)
-- [ ] Task tools: `add_dependency`, `create_subtask`, `create_task_from_template`; planning respects dependencies
-- [ ] Search tool: `search_all`
-- [ ] AI memory: editable memory list, `remember` / `forget` tools with confirmation, injected into context with a size cap
-- [ ] AI can draft automation rules (user confirms before enabling)
+- [x] Claude client (`reqwest` + `serde`), streaming
+- [x] API key storage in Windows Credential Manager
+- [x] Tool registry with JSON schemas and validation
+- [x] Read tools: `get_schedule`, `get_tasks`
+- [x] Write tools: `create_event`, `update_event`, `create_task`, `move_task`, `delete_task`, `start_timer`
+- [x] Confirmation previews / diffs; mandatory confirmation for delete and bulk actions
+- [x] Contextual awareness (current board / selected task / current date and timezone)
+- [x] Chat UI + persisted conversation history
+- [x] Configurable AI context sharing (privacy settings)
+- [x] Undo of AI actions via `activity_log`
+- [x] Note tools: `search_notes`, `get_note`, `create_note` (respecting context-sharing settings)
+- [x] Inbox tools: `get_inbox`, `triage_inbox_item` (AI files captured items as tasks/events, with preview)
+- [x] Task tools: `add_dependency`, `create_subtask`, `create_task_from_template`; planning respects dependencies
+- [x] Search tool: `search_all`
+- [x] AI memory: editable memory list, `remember` / `forget` tools with confirmation, injected into context with a size cap
+- [x] AI can draft automation rules (user confirms before enabling)
+
+The Claude client (SSE parsing, tool loop, retries), tool validation, proposals/confirmation, sharing gates, undo and memory are unit-tested on Linux against a scripted model and a local fake server. **Not yet verified:** a real call with a live API key, and the Windows Credential Manager store (compiles for Windows via `cargo xwin check`). Server-side `fallbacks` are not enabled.
 
 ## Phase 4: Intelligence
 
