@@ -4,6 +4,7 @@ use chrono::{DateTime, Utc};
 use serde::Deserialize;
 
 use crate::domain::activity::Actor;
+use crate::domain::events::{DomainEvent, EventBus, MaybeBus, emit};
 use crate::domain::timers::{FocusSession, NewSession, NewTimer, Timer, TimerChange, TimerView};
 use crate::domain::validation::{
     clean_optional, fmt_utc, invalid, normalize_utc, parse_utc, parse_uuid,
@@ -32,6 +33,7 @@ pub struct StartTimerInput {
 pub struct TimerService {
     repo: Arc<dyn TimerRepository>,
     clock: Clock,
+    bus: MaybeBus,
 }
 
 impl TimerService {
@@ -40,7 +42,17 @@ impl TimerService {
     }
 
     pub fn with_clock(repo: Arc<dyn TimerRepository>, clock: Clock) -> Self {
-        Self { repo, clock }
+        Self {
+            repo,
+            clock,
+            bus: None,
+        }
+    }
+
+    /// Publish `TimerEnded` when a timer finishes.
+    pub fn with_bus(mut self, bus: Arc<EventBus>) -> Self {
+        self.bus = Some(bus);
+        self
     }
 
     fn now(&self) -> DateTime<Utc> {
@@ -84,9 +96,20 @@ impl TimerService {
             accumulated_ms: duration,
             ended_at: Some(fmt_utc(at)),
         };
-        self.repo
+        let closed = self
+            .repo
             .transition(&t.id, &change, session.as_ref(), Actor::User)
-            .await
+            .await?;
+        if state == "finished" {
+            emit(
+                &self.bus,
+                DomainEvent::TimerEnded {
+                    timer_id: closed.id.clone(),
+                    label: closed.label.clone(),
+                },
+            );
+        }
+        Ok(closed)
     }
 
     pub async fn start(&self, input: StartTimerInput, actor: Actor) -> DomainResult<TimerView> {

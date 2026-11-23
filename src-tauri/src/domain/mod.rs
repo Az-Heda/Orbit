@@ -1,6 +1,9 @@
 pub mod activity;
+pub mod automation;
 pub mod calendar;
+pub mod events;
 pub mod ics;
+pub mod inbox;
 pub mod kanban;
 pub mod notes;
 pub mod recurrence;

@@ -4,6 +4,7 @@ use std::sync::Arc;
 use serde::Deserialize;
 
 use crate::domain::activity::Actor;
+use crate::domain::events::{DomainEvent, EventBus, MaybeBus, emit};
 use crate::domain::kanban::{BoardView, ChecklistItem, NewTask, Task, TaskPatch};
 use crate::domain::validation::{clean_optional, clean_text, invalid, normalize_utc, parse_uuid};
 use crate::error::{DomainError, DomainResult};
@@ -35,6 +36,7 @@ pub struct UpdateTaskInput {
 pub struct TaskService {
     tasks: Arc<dyn TaskRepository>,
     projects: Arc<dyn ProjectRepository>,
+    bus: MaybeBus,
 }
 
 pub fn validate_priority(p: i64) -> DomainResult<i64> {
@@ -47,7 +49,17 @@ pub fn validate_priority(p: i64) -> DomainResult<i64> {
 
 impl TaskService {
     pub fn new(tasks: Arc<dyn TaskRepository>, projects: Arc<dyn ProjectRepository>) -> Self {
-        Self { tasks, projects }
+        Self {
+            tasks,
+            projects,
+            bus: None,
+        }
+    }
+
+    /// Publish domain events (task created/moved/completed) on this bus after each commit.
+    pub fn with_bus(mut self, bus: Arc<EventBus>) -> Self {
+        self.bus = Some(bus);
+        self
     }
 
     async fn require_task(&self, id: &str) -> DomainResult<Task> {
@@ -105,7 +117,15 @@ impl TaskService {
     pub async fn create_task(&self, input: CreateTaskInput, actor: Actor) -> DomainResult<Task> {
         let new = self.build_new_task(&input).await?;
         let mut roots = self.tasks.create_task_trees(&[new], actor).await?;
-        roots.pop().ok_or_else(|| invalid("nothing created"))
+        let task = roots.pop().ok_or_else(|| invalid("nothing created"))?;
+        emit(
+            &self.bus,
+            DomainEvent::TaskCreated {
+                task_id: task.id.clone(),
+                title: task.title.clone(),
+            },
+        );
+        Ok(task)
     }
 
     /// Create several validated task trees atomically (used by templates).
@@ -214,13 +234,38 @@ impl TaskService {
             return Err(invalid("tasks can only move within their board"));
         }
         let changing = task.column_id != column_id;
+        let completing = changing && target.kind == "done" && task.completed_at.is_none();
         if changing {
             let to_done = target.kind == "done" && task.completed_at.is_none();
             let to_active = target.kind == "active";
             self.check_warnings(&task, to_done, to_active, force)
                 .await?;
         }
-        self.tasks.move_task(&id, &column_id, position, actor).await
+        let moved = self
+            .tasks
+            .move_task(&id, &column_id, position, actor)
+            .await?;
+        if changing {
+            emit(
+                &self.bus,
+                DomainEvent::TaskMoved {
+                    task_id: moved.id.clone(),
+                    title: moved.title.clone(),
+                    to_column_id: column_id.clone(),
+                    to_column_kind: target.kind.clone(),
+                },
+            );
+            if completing {
+                emit(
+                    &self.bus,
+                    DomainEvent::TaskCompleted {
+                        task_id: moved.id.clone(),
+                        title: moved.title.clone(),
+                    },
+                );
+            }
+        }
+        Ok(moved)
     }
 
     /// Mark a task done/undone. Top-level tasks move to the board's Done (or first open) column.
@@ -241,7 +286,17 @@ impl TaskService {
                 completed: Some(completed),
                 ..Default::default()
             };
-            return self.tasks.update_task(&id, &patch, actor).await;
+            let t = self.tasks.update_task(&id, &patch, actor).await?;
+            if completed && task.completed_at.is_none() {
+                emit(
+                    &self.bus,
+                    DomainEvent::TaskCompleted {
+                        task_id: t.id.clone(),
+                        title: t.title.clone(),
+                    },
+                );
+            }
+            return Ok(t);
         }
         let col = self
             .projects

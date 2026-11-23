@@ -1,7 +1,9 @@
 //! SQLite access. All SQL lives in this module tree (repositories).
 
 mod activity_repo;
+mod automation_repo;
 mod calendar_repo;
+mod inbox_repo;
 mod note_repo;
 mod project_repo;
 mod search_repo;
@@ -19,7 +21,12 @@ use sqlx::SqlitePool;
 use sqlx::sqlite::{SqliteConnectOptions, SqliteJournalMode, SqlitePoolOptions, SqliteSynchronous};
 
 pub use activity_repo::{ActivityRepository, SqliteActivityRepository};
+pub use automation_repo::{
+    AutomationRepository, FiredRepository, RuleWrite, SqliteAutomationRepository,
+    SqliteFiredRepository,
+};
 pub use calendar_repo::{CalendarRepository, ImportEvent, SqliteCalendarRepository};
+pub use inbox_repo::{InboxRepository, SqliteInboxRepository};
 pub use note_repo::{NoteRepository, SqliteNoteRepository};
 pub use project_repo::{ProjectRepository, SqliteProjectRepository};
 pub use search_repo::{SearchRepository, SqliteSearchRepository};

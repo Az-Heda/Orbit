@@ -1,9 +1,14 @@
 //! Business logic. Used by both UI commands and (later) AI tools. Depends on repository traits only.
 
 mod activity_service;
+mod automation_engine;
+mod automation_service;
 mod calendar_service;
+mod inbox_service;
 mod note_service;
+mod notifier;
 mod project_service;
+mod scheduler;
 mod search_service;
 mod settings_service;
 mod stats_service;
@@ -12,15 +17,20 @@ mod template_service;
 mod timer_service;
 
 pub use activity_service::ActivityService;
+pub use automation_engine::AutomationEngine;
+pub use automation_service::{AutomationService, RuleInput};
 pub use calendar_service::{CalendarService, CreateEventInput, OverrideInput, UpdateEventInput};
+pub use inbox_service::InboxService;
 pub use note_service::{NoteDetail, NoteService};
+pub use notifier::{Notifier, NullNotifier};
 pub use project_service::{ProjectService, UpdateProjectInput};
+pub use scheduler::{Scheduler, TickReport};
 pub use search_service::SearchService;
 pub use settings_service::SettingsService;
 pub use stats_service::StatsService;
 pub use task_service::{CreateTaskInput, TaskService, UpdateTaskInput};
 pub use template_service::TemplateService;
-pub use timer_service::{StartTimerInput, TimerService};
+pub use timer_service::{Clock, StartTimerInput, TimerService};
 
 #[cfg(test)]
 mod calendar_tests;
@@ -28,6 +38,8 @@ mod calendar_tests;
 mod kanban_tests;
 #[cfg(test)]
 mod notes_search_tests;
+#[cfg(test)]
+mod phase2_tests;
 #[cfg(test)]
 mod stats_tests;
 #[cfg(test)]
