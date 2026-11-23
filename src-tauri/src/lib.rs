@@ -24,14 +24,47 @@ pub fn run() {
         .setup(|app| {
             let dir = app.path().app_data_dir()?;
             std::fs::create_dir_all(&dir)?;
+            // A staged import/restore replaces the database before anything opens it.
+            match tauri::async_runtime::block_on(services::apply_pending_import(&dir)) {
+                Ok(true) => tracing::info!("imported database applied"),
+                Ok(false) => {}
+                Err(e) => tracing::warn!("could not apply the staged import: {e}"),
+            }
             let pool = tauri::async_runtime::block_on(infrastructure::database::open(
                 &dir.join("orbit.db"),
             ))?;
             tracing::info!("database ready");
-            app.manage(state::AppState::new(
+            let state = state::AppState::new(pool.clone(), shell::shared_notifier(app.handle()));
+            let backups = std::sync::Arc::new(services::BackupService::new(
                 pool,
-                shell::shared_notifier(app.handle()),
+                dir.clone(),
+                state.settings.clone(),
+                std::sync::Arc::new(chrono::Utc::now),
             ));
+            // Automatic local backups: checked at startup and hourly, taken at most daily.
+            let due = backups.clone();
+            tauri::async_runtime::spawn(async move {
+                let mut every = tokio::time::interval(std::time::Duration::from_secs(3600));
+                every.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
+                loop {
+                    every.tick().await;
+                    if let Err(e) = due.run_due().await {
+                        tracing::warn!("automatic backup failed: {e}");
+                    }
+                }
+            });
+            // Self-update (plain executable): remove the previous version left by an update.
+            if let Ok(exe) = std::env::current_exe() {
+                services::cleanup_old_exe(&exe);
+                app.manage(std::sync::Arc::new(services::UpdateService::new(
+                    std::sync::Arc::new(infrastructure::updates::HttpUpdateSource::new()),
+                    state.settings.clone(),
+                    backups.clone(),
+                    exe,
+                )));
+            }
+            app.manage(backups);
+            app.manage(state);
             let hidden = std::env::args().any(|a| a == "--hidden");
             shell::setup(app.handle(), hidden)?;
             Ok(())
@@ -116,6 +149,17 @@ pub fn run() {
             commands::calendar::add_external_calendar,
             commands::calendar::remove_external_calendar,
             commands::calendar::sync_external_calendar,
+            commands::data::backup_status,
+            commands::data::backup_list,
+            commands::data::backup_now,
+            commands::data::backup_export,
+            commands::data::backup_import,
+            commands::data::backup_restore,
+            commands::data::backup_cancel_import,
+            commands::data::restart_app,
+            commands::data::update_check,
+            commands::data::update_skip,
+            commands::data::update_install,
             commands::kanban::list_projects,
             commands::kanban::create_project,
             commands::kanban::update_project,

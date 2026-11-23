@@ -3,6 +3,7 @@
 pub mod activity;
 pub mod ai;
 pub mod calendar;
+pub mod data;
 pub mod desktop;
 pub mod inbox;
 pub mod kanban;

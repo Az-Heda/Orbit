@@ -7,6 +7,8 @@
   import type { ActivityEntry, AppError, Setting } from "$lib/api/types";
   import AiSettings from "$lib/components/AiSettings.svelte";
   import CalendarFeeds from "$lib/components/CalendarFeeds.svelte";
+  import DataSettings from "$lib/components/DataSettings.svelte";
+  import UpdateSettings from "$lib/components/UpdateSettings.svelte";
   import { theme } from "$lib/stores/theme.svelte";
   import { PRESETS, type ThemeMode } from "$lib/theme";
 
@@ -239,6 +241,10 @@
   <AiSettings />
 
   <CalendarFeeds />
+
+  <DataSettings />
+
+  <UpdateSettings />
 
   <section class="card space-y-4 p-6" aria-labelledby="timers">
     <h2 id="timers" class="text-lg">Timers</h2>

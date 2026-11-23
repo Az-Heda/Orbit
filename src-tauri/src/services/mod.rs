@@ -4,6 +4,7 @@ mod activity_service;
 mod ai_service;
 mod automation_engine;
 mod automation_service;
+mod backup_service;
 mod calendar_service;
 mod external_calendar_service;
 mod inbox_service;
@@ -17,11 +18,13 @@ mod stats_service;
 mod task_service;
 mod template_service;
 mod timer_service;
+mod update_service;
 
 pub use activity_service::ActivityService;
 pub use ai_service::{AiService, ChatEvent, ConversationDetail, StreamSink};
 pub use automation_engine::AutomationEngine;
 pub use automation_service::{AutomationService, RuleInput};
+pub use backup_service::{BackupInfo, BackupService, BackupStatus, apply_pending_import};
 pub use calendar_service::{
     CalendarService, CreateEventInput, OverrideInput, UpdateEventInput, ensure_editable,
 };
@@ -37,6 +40,7 @@ pub use stats_service::StatsService;
 pub use task_service::{CreateTaskInput, TaskService, UpdateTaskInput, validate_priority};
 pub use template_service::TemplateService;
 pub use timer_service::{Clock, StartTimerInput, TimerService};
+pub use update_service::{UpdateInfo, UpdateService, cleanup_old_exe};
 
 #[cfg(test)]
 mod ai_tests;

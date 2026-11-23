@@ -3,6 +3,7 @@
   import { goto } from "$app/navigation";
   import ConfirmDialog from "$lib/components/ConfirmDialog.svelte";
   import Toast from "$lib/components/Toast.svelte";
+  import UpdateDialog from "$lib/components/UpdateDialog.svelte";
   import { listen } from "@tauri-apps/api/event";
   import { onMount } from "svelte";
   import { inboxCount } from "$lib/api/inbox";
@@ -73,3 +74,4 @@
 
 <ConfirmDialog />
 <Toast />
+<UpdateDialog />

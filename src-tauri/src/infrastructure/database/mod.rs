@@ -3,6 +3,7 @@
 mod activity_repo;
 mod ai_repo;
 mod automation_repo;
+pub mod backup;
 mod calendar_repo;
 mod external_repo;
 mod inbox_repo;

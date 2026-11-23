@@ -14,4 +14,5 @@ pub mod search;
 pub mod settings;
 pub mod stats;
 pub mod timers;
+pub mod update;
 pub mod validation;
