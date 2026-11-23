@@ -1,3 +1,4 @@
 # Public minisign key used to verify updates (the base64 line of the .pub file).
 # Empty on purpose until a release key exists: without a key the app never installs an update
 # by itself and only offers to open the release page. See docs/RELEASING.md.
+RWRIq3NqppOjL5nJV2XjxU6i4GRCAyvkA3+Gt8pblhalwOZeHIWI82Uf
