@@ -87,6 +87,6 @@ pnpm run check           # svelte-check
 ## Building and releasing
 
 - **"Build the project" means producing an executable, not an installer.** Always use `--no-bundle` (the Makefile does). Never run a bare `tauri build` and never add installer targets (NSIS/MSI/deb/AppImage/dmg) to builds or releases.
-- `make windows` builds `src-tauri/target/x86_64-pc-windows-msvc/release/orbit.exe` (cross-compiled with `cargo-xwin` on Linux/WSL, native on Windows). `make linux` builds `src-tauri/target/release/orbit` (Linux hosts only). `make clean` runs `cargo clean`. Windows is the primary target.
+- `make windows` builds `bin/orbit.exe` (cross-compiled with `cargo-xwin` on Linux/WSL, native on Windows). `make linux` builds `bin/orbit` (Linux hosts only). `make clean` runs `cargo clean` and removes `bin/`. Windows is the primary target.
 - **No macOS builds or releases.**
 - Releases: `.github/workflows/release.yml` runs when a tag like `v1.0.0` is pushed. The tagged commit must be on `main`, and the tag must equal the version in `src-tauri/tauri.conf.json` and `src-tauri/Cargo.toml`. It builds Windows and Linux executables and publishes them (zip / tar.gz) to a GitHub release.

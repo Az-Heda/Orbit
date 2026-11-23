@@ -17,31 +17,31 @@ Legend: `[ ]` todo · `[x]` done
 ## Phase 1: Productivity core
 
 **Kanban**
-- [ ] Projects, boards, columns, tasks (CRUD)
-- [ ] Priorities, due dates
-- [ ] Drag-and-drop
-- [ ] Subtasks and checklists
-- [ ] "Blocked by" dependencies with cycle detection
-- [ ] Task templates (e.g. "new project")
+- [x] Projects, boards, columns, tasks (CRUD)
+- [x] Priorities, due dates
+- [x] Drag-and-drop
+- [x] Subtasks and checklists
+- [x] "Blocked by" dependencies with cycle detection
+- [x] Task templates (e.g. "new project")
 
 **Calendar**
-- [ ] Events CRUD
-- [ ] Day / week / month views
-- [ ] Deadlines shown from tasks
-- [ ] Recurring events and tasks (RRULE storage, expansion on read, per-occurrence exceptions, DST-safe)
-- [ ] `.ics` import and export (dedupe by UID)
+- [x] Events CRUD
+- [x] Day / week / month views
+- [x] Deadlines shown from tasks
+- [x] Recurring events and tasks (RRULE storage, expansion on read, per-occurrence exceptions, DST-safe)
+- [x] `.ics` import and export (dedupe by UID)
 
 **Notes**
-- [ ] Markdown notes and journal (CRUD)
-- [ ] Link notes to tasks, events and projects
-- [ ] FTS5 search with sync triggers
+- [x] Markdown notes and journal (CRUD)
+- [x] Link notes to tasks, events and projects
+- [x] FTS5 search with sync triggers
 
 **Timers and dashboard**
-- [ ] Pomodoro and custom/countdown timers (timestamp-based, persistent)
-- [ ] Focus session history linked to tasks
-- [ ] Overview dashboard
-- [ ] Stats dashboard (focus hours per day/project, completions over time, streaks, heatmap)
-- [ ] Global search across tasks, events, notes, projects and inbox (FTS5-backed, keyboard-first)
+- [x] Pomodoro and custom/countdown timers (timestamp-based, persistent)
+- [x] Focus session history linked to tasks
+- [x] Overview dashboard
+- [x] Stats dashboard (focus hours per day/project, completions over time, streaks, heatmap)
+- [x] Global search across tasks, events, notes, projects and inbox (FTS5-backed, keyboard-first)
 
 ## Phase 2: Desktop experience
 

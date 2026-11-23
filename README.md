@@ -4,7 +4,7 @@ A local-first personal productivity command center for Windows: **calendar + kan
 
 Orbit is not just another calendar or kanban app. The differentiator is a Claude-powered assistant that can read and modify your schedule and tasks through a controlled set of tools, with you approving every change that matters.
 
-> Status: Phase 0 (foundation) done. See [ROADMAP.md](ROADMAP.md) for the plan and [CLAUDE.md](CLAUDE.md) for development guidance.
+> Status: Phase 0 (foundation) and Phase 1 (productivity core) done; Windows-side verification pending. See [ROADMAP.md](ROADMAP.md) for the plan and [CLAUDE.md](CLAUDE.md) for development guidance.
 
 ## Vision
 
@@ -115,9 +115,9 @@ Orbit is built as a plain **executable, not an installer**.
 
 | Command | Output |
 | --- | --- |
-| `make windows` | `src-tauri/target/x86_64-pc-windows-msvc/release/orbit.exe` |
-| `make linux` | `src-tauri/target/release/orbit` (Linux hosts only) |
-| `make clean` | runs `cargo clean` |
+| `make windows` | `bin/orbit.exe` |
+| `make linux` | `bin/orbit` (Linux hosts only) |
+| `make clean` | runs `cargo clean` and removes `bin/` |
 
 On Linux/WSL, `make windows` cross-compiles using `clang`, `lld`, `llvm`, the `x86_64-pc-windows-msvc` Rust target and `cargo-xwin` (`cargo install --locked cargo-xwin`). On Windows it builds natively. Cross-compiled output should still be tested on Windows.
 
