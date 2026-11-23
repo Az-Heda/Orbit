@@ -4,7 +4,7 @@ A local-first personal productivity command center for Windows: **calendar + kan
 
 Orbit is not just another calendar or kanban app. The differentiator is a Claude-powered assistant that can read and modify your schedule and tasks through a controlled set of tools, with you approving every change that matters.
 
-> Status: Phase 0 (foundation) and Phase 1 (productivity core) done; Windows-side verification pending. See [ROADMAP.md](ROADMAP.md) for the plan and [CLAUDE.md](CLAUDE.md) for development guidance.
+> Status: Phases 0-2 (foundation, productivity core, desktop experience) implemented; Windows-side verification of the desktop shell pending. See [ROADMAP.md](ROADMAP.md) for the plan and [CLAUDE.md](CLAUDE.md) for development guidance.
 
 ## Vision
 
@@ -35,6 +35,16 @@ Open your desktop and see your day at a glance in a small floating widget. Hit a
 - **AI memory**: a visible, editable list of preferences/facts the copilot remembers and includes in its context.
 - **Automation rules**: local trigger/action rules (e.g. task moved to Done logs to the journal; timer ends starts a break; every Friday create a review task).
 - **Global search**: one fuzzy search across tasks, events, notes, projects and inbox, available in the palette and main window, keyboard-first.
+
+## Desktop shortcuts
+
+| Shortcut (default, configurable) | Action |
+| --- | --- |
+| `Ctrl+Alt+Space` | Command palette (search everything, jump anywhere) |
+| `Ctrl+Alt+N` | Quick capture into the Inbox |
+| `Ctrl+Alt+W` | Toggle widget click-through (escape hatch; also in the tray menu) |
+
+Closing the main window keeps Orbit running in the tray. Enable "Launch at startup" in Settings to start hidden in the tray. `Alt+Space` is deliberately not used (Windows/PowerToys).
 
 ## Three windows
 
@@ -102,7 +112,7 @@ Claude API usage is billed separately from a Claude subscription (Pro/Max does n
 
 ## Getting started
 
-Prerequisites: Rust toolchain, Node.js, [pnpm](https://pnpm.io), and the Tauri 2 prerequisites (on Windows: WebView2 and MSVC build tools; on Linux: `webkit2gtk-4.1`, GTK 3, libsoup 3).
+Prerequisites: Rust toolchain, Node.js, [pnpm](https://pnpm.io), and the Tauri 2 prerequisites (on Windows: WebView2 and MSVC build tools; on Linux: `webkit2gtk-4.1`, GTK 3, libsoup 3, `libayatana-appindicator3` for the tray).
 
 ```
 pnpm install

@@ -45,17 +45,19 @@ Legend: `[ ]` todo · `[x]` done
 
 ## Phase 2: Desktop experience
 
-- [ ] System tray (keep running in background)
-- [ ] Floating always-on-top widget (clock, next event, active task, timer, quick input)
-- [ ] Global keyboard shortcut and command palette window (with global search)
-- [ ] Customizable widget: selectable blocks, light/dark/accent themes, opacity and click-through ambient mode
-- [ ] Automation rules engine (triggers, actions, loop protection, per-rule enable/disable)
-- [ ] Windows notifications (upcoming events, timer completion)
-- [ ] Sleep/resume handling for timers
-- [ ] Launch at startup option
-- [ ] Quick capture: global hotkey opens a mini input, items land in the Inbox
-- [ ] Inbox view with manual triage into task or event
-- [ ] Smart reminders for events and recurring items (persist across restart and sleep)
+- [x] System tray (keep running in background)
+- [x] Floating always-on-top widget (clock, next event, active task, timer, quick input)
+- [x] Global keyboard shortcut and command palette window (with global search)
+- [x] Customizable widget: selectable blocks, light/dark/accent themes, opacity and click-through ambient mode
+- [x] Automation rules engine (triggers, actions, loop protection, per-rule enable/disable)
+- [x] Windows notifications (upcoming events, timer completion)
+- [x] Sleep/resume handling for timers
+- [x] Launch at startup option
+- [x] Quick capture: global hotkey opens a mini input, items land in the Inbox
+- [x] Inbox view with manual triage into task or event
+- [x] Smart reminders for events and recurring items (persist across restart and sleep)
+
+Logic (inbox, reminders, automation, timers, sleep catch-up) is unit-tested on Linux. The desktop shell (tray, transparent widget, click-through, global shortcuts, toasts, autostart) compiles for Windows but must be verified on a Windows machine.
 
 ## Phase 3: Claude copilot (MVP AI)
 

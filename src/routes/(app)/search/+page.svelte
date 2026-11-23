@@ -29,7 +29,7 @@
     }, 150);
   }
   const target = (h: SearchHit) =>
-    h.kind === "task" || h.kind === "project" ? `/projects/${h.project_id}` : h.kind === "event" ? "/calendar" : h.kind === "note" ? `/notes?id=${h.id}` : "/search";
+    h.kind === "task" || h.kind === "project" ? `/projects/${h.project_id}` : h.kind === "event" ? "/calendar" : h.kind === "note" ? `/notes?id=${h.id}` : "/inbox";
   const open = (h: SearchHit | undefined) => h && goto(target(h));
   function key(e: KeyboardEvent) {
     if (e.key === "ArrowDown") (e.preventDefault(), (sel = Math.min(hits.length - 1, sel + 1)));

@@ -68,3 +68,4 @@ export const instantiateTemplate = (templateId: string, columnId: string, parent
   call<Task[]>("instantiate_template", { templateId, columnId, parentId });
 export const saveTaskAsTemplate = (taskId: string, name: string) =>
   call<TaskTemplate>("save_task_as_template", { taskId, name });
+export const getTask = (id: string) => call<Task>("get_task", { id });

@@ -48,6 +48,14 @@ src-tauri/migrations/ SQL migrations
 - **Automation rules**: a local engine with a closed set of triggers (task moved/created/completed, timer ended, time-based/cron, inbox item added) and actions (create task/note, move task, start timer, notify). Actions go through the same services as the UI and are logged to `activity_log` with actor `automation`. Guard against loops (rule-triggered changes must not retrigger the same rule; add a depth/rate limit) and allow disabling each rule. The AI may draft rules, but the user must confirm them.
 - **Global search**: a search service over FTS5 indexes for tasks, events, notes, projects and inbox, returning typed results with a score. UI and the AI `search_all` tool share it. Keep it responsive (debounce, limit results) and keyboard-navigable.
 
+## Desktop shell and background work
+
+- **Events**: services publish `DomainEvent`s on an in-process bus *after* the mutation commits (task created/moved/completed, timer ended, inbox added). Only the automation engine and the UI relay subscribe; nothing may depend on events for correctness.
+- **Scheduler** (`services/scheduler.rs`): ticks every ~20 s, settles timers, fires reminders and time-based rules. It compares against the clock and persists idempotency keys in `fired_keys`, so restart/sleep never double-fires; reminders missed within 6 h fire once as "Missed", older ones drop. Inject `Clock` and `Notifier` so it stays testable; never use JS timers for this.
+- **Shell** (`src/shell.rs`, `commands/desktop.rs`): tray, widget/palette/capture windows, global shortcuts, autostart. Keep it thin glue; logic belongs in tested services. Every new window label must be added to `capabilities/default.json`. Windows (`widget`, `palette`, `capture`) are routes under `src/routes/(float)/`.
+- Theme and widget config reach other windows via events (`theme-changed`, `widget-config-changed`); windows load them once at startup and then follow events (they never poll the DB for changes). Click-through must keep its escape hatches (tray item and shortcut).
+- Shortcut registration failures are surfaced in Settings, never fatal. Avoid `Alt+Space`.
+
 ## AI integration notes
 
 - Use tool use with a tool registry in `infrastructure/ai/`. Run the standard loop: send messages + tools, execute `tool_use` blocks, return `tool_result`, repeat until the model stops.
