@@ -7,7 +7,7 @@
   let status = $state<api.KeyStatus | null>(null);
   let keyInput = $state("");
   let config = $state<api.AiConfig>({ model: "claude-opus-5-5", effort: "medium" });
-  let sharing = $state<api.Sharing>({ tasks: true, calendar: true, notes: false, inbox: false, memories: true });
+  let sharing = $state<api.Sharing>({ tasks: true, calendar: true, notes: false, inbox: false, memories: true, focus: false });
   let memories = $state<api.Memory[]>([]);
   let newMemory = $state("");
   let editing = $state<Record<string, string>>({});
@@ -69,6 +69,7 @@
     { key: "calendar", label: "Calendar", help: "Events and deadlines" },
     { key: "notes", label: "Notes", help: "Snippets and note text the assistant asks for" },
     { key: "inbox", label: "Inbox", help: "Raw captured text" },
+    { key: "focus", label: "Focus sessions", help: "Timer history and the task each session belongs to" },
     { key: "memories", label: "Memories", help: "The list below is included in every request" },
   ];
 </script>

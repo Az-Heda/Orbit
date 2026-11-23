@@ -6,6 +6,7 @@
   import { listSettings, recentActivity, setSetting } from "$lib/api/settings";
   import type { ActivityEntry, AppError, Setting } from "$lib/api/types";
   import AiSettings from "$lib/components/AiSettings.svelte";
+  import CalendarFeeds from "$lib/components/CalendarFeeds.svelte";
   import { theme } from "$lib/stores/theme.svelte";
   import { PRESETS, type ThemeMode } from "$lib/theme";
 
@@ -19,6 +20,7 @@
   let autostart = $state(false);
   let failures = $state<string[]>([]);
   let remindersOn = $state(true);
+  let autoLink = $state(true);
   let lead = $state(10);
   const SHORTCUTS = [
     { key: "shortcuts.palette", label: "Command palette", def: "Ctrl+Alt+Space" },
@@ -77,6 +79,7 @@
       const v = (() => { try { return JSON.parse(s.value); } catch { return undefined; } })();
       if (s.key in combos && typeof v === "string") combos[s.key] = v;
       if (s.key === "reminders.enabled" && typeof v === "boolean") remindersOn = v;
+      if (s.key === "timers.auto_link" && typeof v === "boolean") autoLink = v;
       if (s.key === "reminders.lead_minutes" && typeof v === "number") lead = v;
     }
   }
@@ -234,6 +237,16 @@
   </section>
 
   <AiSettings />
+
+  <CalendarFeeds />
+
+  <section class="card space-y-4 p-6" aria-labelledby="timers">
+    <h2 id="timers" class="text-lg">Timers</h2>
+    <label class="flex items-center gap-2 text-sm">
+      <input type="checkbox" bind:checked={autoLink} onchange={() => setSetting("timers.auto_link", autoLink).catch(report)} />
+      Link a focus timer to the task in progress when none is chosen (only if exactly one task is in an active column)
+    </label>
+  </section>
 
   <section class="card space-y-4 p-6" aria-labelledby="notif">
     <h2 id="notif" class="text-lg">Reminders</h2>

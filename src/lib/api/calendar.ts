@@ -1,5 +1,5 @@
 import { call } from "./invoke";
-import type { CalendarEvent, CalendarItem, ImportSummary } from "./types";
+import type { CalendarEvent, CalendarItem, ExternalCalendar, ImportSummary, SyncReport } from "./types";
 
 export const localTimezone = () => Intl.DateTimeFormat().resolvedOptions().timeZone;
 
@@ -37,3 +37,9 @@ export const setTaskOccurrence = (taskId: string, originalDue: string, status: "
 export const exportIcsFile = (path: string) => call<void>("export_ics_file", { path });
 export const importIcsFile = (path: string, timezone: string) =>
   call<ImportSummary>("import_ics_file", { path, timezone });
+
+export const listExternalCalendars = () => call<ExternalCalendar[]>("list_external_calendars");
+export const addExternalCalendar = (name: string, url: string) =>
+  call<ExternalCalendar>("add_external_calendar", { name, url });
+export const removeExternalCalendar = (id: string) => call<void>("remove_external_calendar", { id });
+export const syncExternalCalendar = (id: string) => call<SyncReport>("sync_external_calendar", { id });

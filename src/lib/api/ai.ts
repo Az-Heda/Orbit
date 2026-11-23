@@ -90,6 +90,7 @@ export interface Sharing {
   notes: boolean;
   inbox: boolean;
   memories: boolean;
+  focus: boolean;
 }
 
 export interface Memory {

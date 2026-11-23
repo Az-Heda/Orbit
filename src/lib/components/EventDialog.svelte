@@ -27,6 +27,7 @@
   let customRule = $state<string | null>(null);
   let scope = $state<"series" | "occurrence">("series");
   let series = $state<CalendarEvent | null>(null);
+  const readOnly = $derived(!!series?.external_calendar_id);
   let loadedKey = "";
 
   const item = $derived(target && "item" in target ? target.item : null);
@@ -227,16 +228,19 @@
       {/if}
 
       <div class="flex flex-wrap items-center gap-2 border-t border-border pt-4">
-        {#if item && !isTask && item.recurring && item.occurrence_start}
+        {#if readOnly}
+          <p class="text-sm text-muted">From a subscribed calendar: read-only.</p>
+        {/if}
+        {#if item && !isTask && !readOnly && item.recurring && item.occurrence_start}
           <button class="btn" onclick={() => run(() => skipOccurrence(item.source_id, item.occurrence_start!))}>Skip this occurrence</button>
           {#if item.overridden}
             <button class="btn" onclick={() => run(() => restoreOccurrence(item.source_id, item.occurrence_start!))}>Restore to series</button>
           {/if}
         {/if}
-        {#if item && !isTask}<button class="btn btn-danger" onclick={remove}>Delete</button>{/if}
+        {#if item && !isTask && !readOnly}<button class="btn btn-danger" onclick={remove}>Delete</button>{/if}
         <span class="ml-auto"></span>
         <button class="btn" onclick={() => dialog?.close()}>{isTask ? "Close" : "Cancel"}</button>
-        {#if !isTask}<button class="btn btn-primary" onclick={save} disabled={!title.trim()}>Save</button>{/if}
+        {#if !isTask && !readOnly}<button class="btn btn-primary" onclick={save} disabled={!title.trim()}>Save</button>{/if}
       </div>
     </div>
   {/if}

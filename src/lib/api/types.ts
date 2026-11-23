@@ -133,6 +133,24 @@ export interface CalendarEvent {
   end_at: string;
   timezone: string;
   recurrence_rule: string | null;
+  /** Set for events from a subscribed calendar (read-only). */
+  external_calendar_id: string | null;
+}
+
+export interface ExternalCalendar {
+  id: string;
+  name: string;
+  created_at: string;
+  last_synced_at: string | null;
+  last_error: string | null;
+  event_count: number;
+}
+
+export interface SyncReport {
+  created: number;
+  updated: number;
+  removed: number;
+  skipped: number;
 }
 
 export interface ImportSummary {
