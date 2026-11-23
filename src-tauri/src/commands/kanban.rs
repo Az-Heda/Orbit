@@ -242,3 +242,8 @@ pub async fn save_task_as_template(
         .save_task_as_template(&task_id, &name, U)
         .await?)
 }
+
+#[tauri::command]
+pub async fn get_task(s: State<'_, AppState>, id: String) -> AppResult<Task> {
+    Ok(s.tasks.get_task(&id).await?)
+}

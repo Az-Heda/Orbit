@@ -2,6 +2,8 @@
 
 pub mod activity;
 pub mod calendar;
+pub mod desktop;
+pub mod inbox;
 pub mod kanban;
 pub mod notes;
 pub mod settings;

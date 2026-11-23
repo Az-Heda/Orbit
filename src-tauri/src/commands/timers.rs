@@ -1,4 +1,4 @@
-use tauri::State;
+use tauri::{AppHandle, Emitter, State};
 
 use crate::domain::activity::Actor;
 use crate::domain::stats::Stats;
@@ -10,23 +10,47 @@ use crate::state::AppState;
 const U: Actor = Actor::User;
 
 #[tauri::command]
-pub async fn start_timer(s: State<'_, AppState>, input: StartTimerInput) -> AppResult<TimerView> {
-    Ok(s.timers.start(input, U).await?)
+pub async fn start_timer(
+    app: AppHandle,
+    s: State<'_, AppState>,
+    input: StartTimerInput,
+) -> AppResult<TimerView> {
+    let view = s.timers.start(input, U).await?;
+    let _ = app.emit("timer-changed", ());
+    Ok(view)
 }
 
 #[tauri::command]
-pub async fn pause_timer(s: State<'_, AppState>, id: String) -> AppResult<TimerView> {
-    Ok(s.timers.pause(&id).await?)
+pub async fn pause_timer(
+    app: AppHandle,
+    s: State<'_, AppState>,
+    id: String,
+) -> AppResult<TimerView> {
+    let view = s.timers.pause(&id).await?;
+    let _ = app.emit("timer-changed", ());
+    Ok(view)
 }
 
 #[tauri::command]
-pub async fn resume_timer(s: State<'_, AppState>, id: String) -> AppResult<TimerView> {
-    Ok(s.timers.resume(&id).await?)
+pub async fn resume_timer(
+    app: AppHandle,
+    s: State<'_, AppState>,
+    id: String,
+) -> AppResult<TimerView> {
+    let view = s.timers.resume(&id).await?;
+    let _ = app.emit("timer-changed", ());
+    Ok(view)
 }
 
 #[tauri::command]
-pub async fn stop_timer(s: State<'_, AppState>, id: String) -> AppResult<TimerView> {
-    Ok(s.timers.stop(&id).await?)
+pub async fn stop_timer(
+    app: AppHandle,
+    s: State<'_, AppState>,
+    id: String,
+) -> AppResult<TimerView> {
+    let view = s.timers.stop(&id).await?;
+    let _ = app.emit("timer-changed", ());
+    Ok(view)
 }
 
 #[tauri::command]

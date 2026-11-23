@@ -4,6 +4,7 @@ pub mod error;
 pub mod infrastructure;
 pub mod logging;
 pub mod services;
+pub mod shell;
 pub mod state;
 
 use tauri::Manager;
@@ -14,6 +15,12 @@ pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_dialog::init())
+        .plugin(tauri_plugin_notification::init())
+        .plugin(tauri_plugin_global_shortcut::Builder::new().build())
+        .plugin(tauri_plugin_autostart::init(
+            tauri_plugin_autostart::MacosLauncher::LaunchAgent,
+            Some(vec!["--hidden"]),
+        ))
         .setup(|app| {
             let dir = app.path().app_data_dir()?;
             std::fs::create_dir_all(&dir)?;
@@ -21,7 +28,12 @@ pub fn run() {
                 &dir.join("orbit.db"),
             ))?;
             tracing::info!("database ready");
-            app.manage(state::AppState::new(pool));
+            app.manage(state::AppState::new(
+                pool,
+                shell::shared_notifier(app.handle()),
+            ));
+            let hidden = std::env::args().any(|a| a == "--hidden");
+            shell::setup(app.handle(), hidden)?;
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
@@ -48,6 +60,28 @@ pub fn run() {
             commands::timers::list_focus_sessions,
             commands::timers::set_session_task,
             commands::timers::get_stats,
+            commands::inbox::capture_inbox,
+            commands::inbox::list_inbox,
+            commands::inbox::inbox_count,
+            commands::inbox::triage_inbox_to_task,
+            commands::inbox::triage_inbox_to_event,
+            commands::inbox::dismiss_inbox,
+            commands::inbox::list_rules,
+            commands::inbox::create_rule,
+            commands::inbox::update_rule,
+            commands::inbox::set_rule_enabled,
+            commands::inbox::delete_rule,
+            commands::desktop::toggle_widget,
+            commands::desktop::set_widget_click_through,
+            commands::desktop::open_palette,
+            commands::desktop::open_capture,
+            commands::desktop::hide_window,
+            commands::desktop::open_main,
+            commands::desktop::get_autostart,
+            commands::desktop::set_autostart,
+            commands::desktop::shortcut_failures,
+            commands::desktop::apply_shortcuts,
+            commands::kanban::get_task,
             commands::calendar::get_event,
             commands::calendar::create_event,
             commands::calendar::update_event,
