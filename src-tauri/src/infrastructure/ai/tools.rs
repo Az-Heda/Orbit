@@ -941,7 +941,7 @@ impl Tools {
                             "kind": i.kind, "id": i.source_id, "title": i.title,
                             "start": local_iso(&i.start_at, tz), "end": local_iso(&i.end_at, tz),
                             "all_day": i.all_day, "recurring": i.recurring, "completed": i.completed,
-                            "location": i.location, "priority": i.priority,
+                            "location": i.location, "priority": i.priority, "read_only": i.external,
                         })
                     })
                     .collect();
@@ -1059,7 +1059,7 @@ impl Tools {
                         .iter()
                         .filter(|i| i.kind == "event")
                         .take(MAX_RESULT_ITEMS)
-                        .map(|i| json!({ "title": i.title, "start": local_iso(&i.start_at, tz), "end": local_iso(&i.end_at, tz), "all_day": i.all_day }))
+                        .map(|i| json!({ "title": i.title, "start": local_iso(&i.start_at, tz), "end": local_iso(&i.end_at, tz), "all_day": i.all_day, "read_only": i.external }))
                         .collect();
                     busy = self.busy(start, end).await?;
                     out["events"] = json!(events);
@@ -1686,10 +1686,13 @@ impl Tools {
                     }
                     let (t, from) = self.task_summary(&id).await?;
                     changes.push(change(&t.title, Some(from), Some(target.name.clone())));
+                    if let Some(w) = self.d.tasks.move_warning(&id, &target.id).await? {
+                        changes.push(change("Warning", Some(t.title.clone()), Some(w)));
+                    }
                 }
                 Ok(Plan {
                     preview: Preview {
-                        summary: format!("Move {} task(s) to “{}”", changes.len(), target.name),
+                        summary: format!("Move {} task(s) to “{}”", a.task_ids.len(), target.name),
                         // Bulk operations always need an explicit, prominent confirmation.
                         destructive: true,
                         changes,

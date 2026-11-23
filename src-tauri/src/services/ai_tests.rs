@@ -72,6 +72,7 @@ impl StreamSink for Collect {
 }
 
 struct T {
+    pool: sqlx::SqlitePool,
     s: AppState,
     script: Arc<Script>,
     column: String,
@@ -85,7 +86,7 @@ async fn setup(replies: Vec<ModelReply>) -> T {
         ..Default::default()
     });
     let s = AppState::with_ai(
-        pool,
+        pool.clone(),
         Arc::new(NullNotifier),
         Arc::new(MemorySecretStore::default()),
         script.clone(),
@@ -112,6 +113,7 @@ async fn setup(replies: Vec<ModelReply>) -> T {
         .id
         .clone();
     T {
+        pool,
         s,
         script,
         column,
@@ -1028,4 +1030,173 @@ async fn focus_timer_links_to_the_sole_active_task_and_can_be_relinked_and_undon
     t.s.ai.undo_proposal(&p.id).await.unwrap();
     let back = t.s.timers.get_session(&sessions[0].id).await.unwrap();
     assert_eq!(back.task_id.as_deref(), Some(task.id.as_str()));
+}
+
+async fn rust_target(t: &T) -> String {
+    let rust =
+        t.s.projects
+            .create_project("Rust", None, None, Actor::User)
+            .await
+            .unwrap();
+    let rb = t.s.projects.list_boards(&rust.id).await.unwrap().remove(0);
+    let rv = t.s.tasks.board_view(&rb.id).await.unwrap();
+    rv.columns
+        .iter()
+        .find(|c| c.kind == "backlog")
+        .unwrap()
+        .id
+        .clone()
+}
+
+#[tokio::test]
+async fn bulk_move_warns_about_open_subtasks_and_undo_brings_subtasks_back() {
+    let t = setup(vec![]).await;
+    let parent = new_task(&t, "Parent").await;
+    let sub =
+        t.s.tasks
+            .create_task(
+                super::CreateTaskInput {
+                    column_id: None,
+                    parent_id: Some(parent.id.clone()),
+                    title: "Child".into(),
+                    description: None,
+                    priority: None,
+                    due_at: None,
+                    position: None,
+                },
+                Actor::User,
+            )
+            .await
+            .unwrap();
+    // Same-board move to Done with an open subtask: the preview carries the warning.
+    t.script.replies.lock().unwrap().extend([
+        tool(
+            "a",
+            "move_tasks",
+            json!({"task_ids": [parent.id], "column_id": t.done_column}),
+        ),
+        text("ok"),
+    ]);
+    let (_, ev) = say(&t, None, "finish parent").await;
+    let p = proposal_of(&ev);
+    assert!(
+        p.preview["changes"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|c| c["label"] == "Warning")
+    );
+
+    // Cross-board move and undo: the subtask travels both ways.
+    let target = rust_target(&t).await;
+    t.script.replies.lock().unwrap().extend([
+        tool(
+            "b",
+            "move_tasks",
+            json!({"task_ids": [parent.id], "column_id": target}),
+        ),
+        text("ok"),
+    ]);
+    let (_, ev) = say(&t, None, "to rust").await;
+    let p = proposal_of(&ev);
+    t.s.ai.apply_proposal(&p.id).await.unwrap();
+    assert_eq!(t.s.tasks.get_task(&sub.id).await.unwrap().column_id, target);
+    t.s.ai.undo_proposal(&p.id).await.unwrap();
+    assert_eq!(
+        t.s.tasks.get_task(&parent.id).await.unwrap().column_id,
+        t.column
+    );
+    assert_eq!(
+        t.s.tasks.get_task(&sub.id).await.unwrap().column_id,
+        t.column
+    );
+}
+
+#[tokio::test]
+async fn failed_bulk_apply_rolls_back_the_partial_changes() {
+    let t = setup(vec![]).await;
+    let (a, b, c) = (
+        new_task(&t, "A").await,
+        new_task(&t, "B").await,
+        new_task(&t, "C").await,
+    );
+    let target = rust_target(&t).await;
+    t.script.replies.lock().unwrap().extend([
+        tool(
+            "m",
+            "move_tasks",
+            json!({"task_ids": [a.id, b.id], "column_id": target}),
+        ),
+        text("ok"),
+    ]);
+    let (cid, ev) = say(&t, None, "move both").await;
+    let p = proposal_of(&ev);
+    // After the preview, B gains a dependency, so moving it across boards now fails.
+    t.s.tasks
+        .add_dependency(&b.id, &c.id, Actor::User)
+        .await
+        .unwrap();
+    assert!(t.s.ai.apply_proposal(&p.id).await.is_err());
+    assert_eq!(
+        t.s.tasks.get_task(&a.id).await.unwrap().column_id,
+        t.column,
+        "A rolled back"
+    );
+    assert_eq!(t.s.tasks.get_task(&b.id).await.unwrap().column_id, t.column);
+    let d = t.s.ai.conversation(&cid).await.unwrap();
+    assert_eq!(d.proposals[0].status, "failed");
+}
+
+#[tokio::test]
+async fn ai_cannot_propose_changes_to_feed_events() {
+    use crate::infrastructure::database::{
+        ExternalCalendarRepository, ImportEvent, SqliteExternalCalendarRepository,
+    };
+    let t = setup(vec![]).await;
+    let repo = SqliteExternalCalendarRepository::new(t.pool.clone());
+    let cal = repo.create("Feed").await.unwrap();
+    repo.replace_events(
+        &cal.id,
+        &[ImportEvent {
+            event: crate::domain::calendar::NewEvent {
+                uid: "f@x".into(),
+                title: "Feed event".into(),
+                description: None,
+                location: None,
+                all_day: false,
+                start_at: "2027-01-11T09:00:00Z".into(),
+                end_at: "2027-01-11T10:00:00Z".into(),
+                timezone: "UTC".into(),
+                recurrence_rule: None,
+            },
+            exceptions: vec![],
+        }],
+    )
+    .await
+    .unwrap();
+    t.script.replies.lock().unwrap().extend([
+        tool(
+            "s",
+            "get_schedule",
+            json!({"from": "2027-01-11T00:00", "to": "2027-01-12T00:00"}),
+        ),
+        text("seen"),
+    ]);
+    say(&t, None, "what's on").await;
+    let r: Value = serde_json::from_str(&last_result(&t)).unwrap();
+    assert_eq!(r["items"][0]["read_only"], true);
+    let id = r["items"][0]["id"].as_str().unwrap().to_string();
+
+    t.script.replies.lock().unwrap().extend([
+        tool(
+            "u",
+            "update_event",
+            json!({"event_id": id, "title": "Hacked"}),
+        ),
+        tool("d", "delete_event", json!({"event_id": id})),
+        text("no"),
+    ]);
+    let (_, ev) = say(&t, None, "rename it").await;
+    assert!(!ev.iter().any(|e| matches!(e, ChatEvent::Proposal { .. })));
+    assert!(last_result(&t).contains("read-only"));
 }

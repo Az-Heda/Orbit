@@ -120,6 +120,7 @@ export interface CalendarItem {
   priority: number;
   project_id: string | null;
   board_id: string | null;
+  external: boolean;
 }
 
 export interface CalendarEvent {

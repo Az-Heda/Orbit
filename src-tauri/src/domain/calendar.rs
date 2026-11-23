@@ -117,6 +117,8 @@ pub struct CalendarItem {
     pub priority: i64,
     pub project_id: Option<String>,
     pub board_id: Option<String>,
+    /// From a subscribed calendar: read-only.
+    pub external: bool,
 }
 
 #[derive(Debug, Clone, Default, Serialize)]

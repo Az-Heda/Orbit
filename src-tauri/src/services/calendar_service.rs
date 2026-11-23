@@ -441,6 +441,7 @@ impl CalendarService {
                 priority: 0,
                 project_id: None,
                 board_id: None,
+                external: ev.external_calendar_id.is_some(),
             };
         for ev in &events {
             let (start, end) = (parse_utc(&ev.start_at)?, parse_utc(&ev.end_at)?);
@@ -515,6 +516,7 @@ impl CalendarService {
             priority: t.priority,
             project_id: Some(t.project_id.clone()),
             board_id: Some(t.board_id.clone()),
+            external: false,
         };
         for t in self.repo.task_deadlines_in_range(&from_s, &to_s).await? {
             items.push(task_item(

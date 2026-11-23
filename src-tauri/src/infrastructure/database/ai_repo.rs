@@ -534,6 +534,20 @@ async fn revert_one(
             .bind(id)
             .execute(&mut *tx)
             .await?;
+            // Subtasks always follow their parent's column, but their move is not logged on its
+            // own: carry them back too, or they would stay behind (possibly on another board).
+            if s(before, "column_id") != s(after, "column_id") {
+                sqlx::query(
+                    "WITH RECURSIVE d(id) AS (
+                        SELECT id FROM tasks WHERE parent_id = ?1 AND deleted_at IS NULL
+                        UNION ALL SELECT t.id FROM tasks t JOIN d ON t.parent_id = d.id WHERE t.deleted_at IS NULL)
+                     UPDATE tasks SET column_id = ?2 WHERE id IN (SELECT id FROM d)",
+                )
+                .bind(id)
+                .bind(s(before, "column_id"))
+                .execute(&mut *tx)
+                .await?;
+            }
         }
         ("task", "delete") => {
             sqlx::query(
