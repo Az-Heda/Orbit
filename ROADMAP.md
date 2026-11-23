@@ -101,7 +101,14 @@ All AI items below are tools in `infrastructure/ai/tools.rs` that go through the
 - [ ] Export / import data
 - [ ] FTS5 search across tasks, projects and notes
 - [ ] Windows installer
-- [ ] Auto-update
+- [ ] Auto-update (custom, no installer or Tauri updater plugin, since releases are a plain `orbit.exe`; Windows only at first)
+  - [ ] Check the GitHub Releases API (`releases/latest`) on startup and daily, compare the tag to the running version with semver; unauthenticated, no user data, opt-out in Settings plus a "Check now" button
+  - [ ] Ask: dialog with version and release notes, buttons "Update", "Later" and "Skip this version" (skipped version stored in settings)
+  - [ ] Download the Windows zip asset to a temp folder next to the exe
+  - [ ] Verify: the release workflow also publishes `SHA256SUMS`, signed with an ed25519/minisign key (private key in GitHub Actions secrets, public key embedded in the app); refuse to install on any mismatch
+  - [ ] Swap without a helper script: rename `orbit.exe` to `orbit.exe.old`, move the new exe in, launch it and exit; the new version deletes `.old` on start; roll back on any failure; if the folder is not writable, fall back to opening the release page
+  - [ ] Back up `orbit.db` before the first launch of a new version (depends on the automatic backups item)
+  - [ ] Later: Linux (`orbit` tar.gz) with the same flow; code signing against SmartScreen warnings
 - [ ] Documentation and onboarding
 
 ## Phase 6: Automation expansion

@@ -141,4 +141,4 @@ On Linux/WSL, `make windows` cross-compiles using `clang`, `lld`, `llvm`, the `x
 
 ## Releases
 
-Pushing a tag like `v1.0.0` (the commit must be on `main`, and the version must match `tauri.conf.json` and `Cargo.toml`) triggers the GitHub Actions release workflow. It builds Windows (`.zip` with `orbit.exe`) and Linux (`.tar.gz`) executables and attaches them to a GitHub release. There are no installers and no macOS builds.
+Pushing a tag like `v1.0.0` (the commit must be on `main`, and the version must match `tauri.conf.json` and `Cargo.toml`) triggers the GitHub Actions release workflow. It builds Windows (`.zip` with `orbit.exe`) and Linux (`.tar.gz`) executables and attaches them to a GitHub release. There are no installers and no macOS builds. Planned: a built-in, opt-out update check that verifies a signed checksum and swaps the executable (see ROADMAP.md, Phase 5).
