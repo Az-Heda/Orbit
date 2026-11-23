@@ -82,16 +82,18 @@ The Claude client (SSE parsing, tool loop, retries), tool validation, proposals/
 
 ## Phase 4: Intelligence
 
-- [ ] Natural-language scheduling ("block 2 hours tomorrow for studying")
-- [ ] AI daily planning from events, tasks, priorities and deadlines
-- [ ] Schedule optimization (find free slots for unfinished tasks)
-- [ ] Task breakdown into subtasks
-- [ ] Smart organization (e.g. move all Rust-related tasks into the Rust project)
-- [ ] Daily summary of completed/unfinished work
-- [ ] Context-aware "what should I work on next?" suggestions
-- [ ] Automatic association of focus sessions with tasks
-- [ ] Read-only Google/Outlook calendar sync (opt-in, OAuth tokens in Credential Manager)
-- [ ] AI answers from notes ("what did I decide about auth?")
+All AI items below are tools in `infrastructure/ai/tools.rs` that go through the same services as the UI; writes are proposals the user confirms. Only the deterministic parts (free-slot search, ranking, relocation, feeds) are unit-tested; model behaviour was not exercised against the live API.
+
+- [x] Natural-language scheduling ("block 2 hours tomorrow for studying"): `find_free_slots` + `create_event`
+- [x] AI daily planning from events, tasks, priorities and deadlines: `plan_day`
+- [x] Schedule optimization (find free slots for unfinished tasks): working-hours-aware `find_free_slots`, DST-safe
+- [x] Task breakdown into subtasks: `create_subtasks` (one atomic, undoable proposal)
+- [x] Smart organization (e.g. move all Rust-related tasks into the Rust project): `move_tasks` (cross-board, always flagged for confirmation; tasks with dependencies cannot leave their board)
+- [x] Daily summary of completed/unfinished work: `daily_summary`
+- [x] Context-aware "what should I work on next?" suggestions: `suggest_next_tasks` (overdue, due soon, priority, in progress; blocked tasks excluded)
+- [x] Automatic association of focus sessions with tasks: a focus timer started without a task links to the single task in an active column (setting `timers.auto_link`); `get_focus_sessions` / `link_focus_session` fix up the rest (new "focus sessions" sharing category, off by default)
+- [x] Read-only calendar subscriptions (opt-in): paste a Google/Outlook private iCal (ICS) address; events are tagged `external_calendar_id`, refreshed hourly, never editable (UI and AI), URL kept in Credential Manager
+- [x] AI answers from notes ("what did I decide about auth?"): `search_notes` + `get_note` with citation guidance in the system prompt (respects the notes sharing setting)
 
 ## Phase 5: Polish and release
 
@@ -101,6 +103,15 @@ The Claude client (SSE parsing, tool loop, retries), tool validation, proposals/
 - [ ] Windows installer
 - [ ] Auto-update
 - [ ] Documentation and onboarding
+
+## Phase 6: Automation expansion
+
+- [ ] Chained actions: a rule can have several "Then" steps that run in order (add/remove/reorder in the automation page; a failing step is logged and stops the chain)
+- [ ] Notification channels: Settings page to create named channels of type Windows toast, Telegram (bot token + chat id) or Discord (webhook URL), each with a message template (placeholders such as `{{task.title}}`, `{{rule.name}}`) and a "Send test" button
+- [ ] Automation action "Send a notification": pick the action in the first select, then a second select appears listing the saved channels by name; the channel's template is rendered with the trigger's data
+- [ ] Channel secrets (bot token, webhook URL) live in the credential store, never in the DB, logs or frontend; delivery failures are logged to `activity_log`, rate-limited and never block the rule engine
+- [ ] The AI may draft rules that use a channel by name, but never sees tokens or webhook URLs and cannot create or edit channels
+- [ ] Follow-up: real OAuth sign-in for Google/Outlook calendars (needs registered client IDs; the Phase 4 ICS address covers read-only use meanwhile)
 
 ## MVP definition
 
@@ -119,7 +130,7 @@ Phases 0 to 3 plus backups and export/import from Phase 5.
 
 ## Expansion ideas log
 
-Accepted (already placed in the phases above): quick capture inbox, recurring tasks/events with smart reminders, calendar interop (`.ics` then read-only external sync), notes and journal, task depth (subtasks, dependencies, templates), stats dashboard, customizable widget, AI memory, automation rules, global search.
+Accepted (already placed in the phases above): quick capture inbox, recurring tasks/events with smart reminders, calendar interop (`.ics` then read-only external sync), notes and journal, task depth (subtasks, dependencies, templates), stats dashboard, customizable widget, AI memory, automation rules, global search, automation expansion (chained actions, notification channels: Windows/Telegram/Discord).
 
 Parked: MCP server, local LLM, review ritual, voice input, history browser, proactive nudges.
 

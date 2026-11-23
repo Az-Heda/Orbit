@@ -4,7 +4,7 @@ A local-first personal productivity command center for Windows: **calendar + kan
 
 Orbit is not just another calendar or kanban app. The differentiator is a Claude-powered assistant that can read and modify your schedule and tasks through a controlled set of tools, with you approving every change that matters.
 
-> Status: Phases 0-3 (foundation, productivity core, desktop experience, Claude copilot) implemented; Windows-side verification of the desktop shell and a live-API check of the copilot are pending. See [ROADMAP.md](ROADMAP.md) for the plan and [CLAUDE.md](CLAUDE.md) for development guidance.
+> Status: Phases 0-4 (foundation, productivity core, desktop experience, Claude copilot, intelligence) implemented; Windows-side verification of the desktop shell and a live-API check of the copilot are pending. See [ROADMAP.md](ROADMAP.md) for the plan and [CLAUDE.md](CLAUDE.md) for development guidance.
 
 ## Vision
 
@@ -28,12 +28,12 @@ Open your desktop and see your day at a glance in a small floating widget. Hit a
 - **Notes**: markdown notes and journal, linked to tasks, events and projects, full-text searchable, readable by the AI for context.
 - **Inbox / quick capture**: a global hotkey opens a tiny box; whatever you type lands in an Inbox and is filed as a task or event (by you or the AI).
 - **Recurrence and reminders**: recurring events and tasks (every Monday, monthly, ...) with smart reminders.
-- **Calendar interop**: `.ics` import/export, then optional read-only sync from Google/Outlook calendars.
+- **Calendar interop**: `.ics` import/export, plus opt-in read-only subscriptions to Google/Outlook calendars through their private iCal address (no account sign-in; the address stays in the Windows Credential Manager).
 - **Task depth**: subtasks, checklists, "blocked by" dependencies and reusable templates (e.g. a "new project" template). The AI respects dependencies when planning.
 - **Stats dashboard**: focus hours per day/project, tasks completed over time, streaks and a heatmap calendar, all computed locally.
 - **Customizable widget**: choose the blocks the floating widget shows (clock, next event, timer, active task, inbox count), light/dark/accent themes, and an opacity/click-through ambient mode.
 - **AI memory**: a visible, editable list of preferences/facts the copilot remembers and includes in its context.
-- **Automation rules**: local trigger/action rules (e.g. task moved to Done logs to the journal; timer ends starts a break; every Friday create a review task).
+- **Automation rules**: local trigger/action rules (e.g. task moved to Done logs to the journal; timer ends starts a break; every Friday create a review task). Planned: chained "then" steps and named notification channels (Windows, Telegram, Discord) with templates.
 - **Global search**: one fuzzy search across tasks, events, notes, projects and inbox, available in the palette and main window, keyboard-first.
 
 ## Desktop shortcuts
@@ -98,6 +98,8 @@ Initial set:
 `get_schedule`, `get_tasks`, `create_event`, `update_event`, `create_task`, `move_task`, `delete_task`, `start_timer`.
 
 Added by accepted ideas: `search_notes`, `get_note`, `create_note`, `get_inbox`, `triage_inbox_item`, `add_dependency`, `create_subtask`, `create_task_from_template`, `search_all`, `remember` / `forget` (AI memory, user-editable), `list_projects`, `list_templates`, `update_task`, `delete_event`, `draft_automation_rule`.
+
+Phase 4 (planning): `find_free_slots`, `plan_day`, `suggest_next_tasks`, `daily_summary`, `get_focus_sessions`, `create_subtasks`, `move_tasks` (bulk, cross-project), `link_focus_session`. Notes questions use `search_notes` / `get_note`. Focus data is its own sharing category (off by default).
 
 Setting the API key: paste it in Settings → Assistant (stored in the Windows Credential Manager). On non-Windows builds only the `ANTHROPIC_API_KEY` environment variable is used. The model name and effort are settings (default `claude-opus-5-5`, effort `medium`).
 
