@@ -1,6 +1,6 @@
 [package]
 name = "orbit"
-version = "1.0.2"
+version = "1.0.3"
 description = "Orbit: local-first productivity app"
 authors = []
 edition = "2024"
