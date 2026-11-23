@@ -91,6 +91,19 @@ pub(crate) fn now_utc() -> String {
 mod tests {
     use super::*;
 
+    /// sqlx checksums the embedded bytes of each migration, so a CRLF checkout (Windows CI)
+    /// would make every existing database refuse to start. `.gitattributes` keeps them LF.
+    #[test]
+    fn migrations_use_unix_line_endings() {
+        for m in MIGRATOR.iter() {
+            assert!(
+                !m.sql.as_str().contains('\r'),
+                "migration {} contains CR characters (check .gitattributes)",
+                m.version
+            );
+        }
+    }
+
     #[tokio::test]
     async fn on_disk_db_uses_wal_and_migrates() {
         let dir = std::env::temp_dir().join(format!("orbit-test-{}", uuid::Uuid::new_v4()));

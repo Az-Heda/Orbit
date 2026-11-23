@@ -1,0 +1,4 @@
+# sqlx stores a checksum of every migration. A CRLF checkout (the default on Windows runners)
+# changes the embedded bytes and makes existing databases fail with
+# "migration N was previously applied but has been modified". Keep them LF everywhere.
+*.sql text eol=lf

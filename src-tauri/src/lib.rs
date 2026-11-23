@@ -190,5 +190,8 @@ pub fn run() {
             commands::kanban::save_task_as_template,
         ])
         .run(tauri::generate_context!())
-        .expect("error while running tauri application");
+        .unwrap_or_else(|e| {
+            // Reaches the crash log through the panic hook (the release build has no console).
+            panic!("error while running Orbit: {e}")
+        });
 }
