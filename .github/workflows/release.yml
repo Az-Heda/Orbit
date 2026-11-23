@@ -1,0 +1,104 @@
+name: Release
+
+# Runs when a tag like v1.0.0 is pushed. The tagged commit must be on main.
+on:
+  push:
+    tags:
+      - "v[0-9]+.[0-9]+.[0-9]+"
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Tagged commit must be on main
+        run: |
+          git fetch origin main
+          git merge-base --is-ancestor "$GITHUB_SHA" origin/main \
+            || { echo "::error::Tag $GITHUB_REF_NAME is not on main"; exit 1; }
+      - name: Tag must match app version
+        run: |
+          v="${GITHUB_REF_NAME#v}"
+          conf=$(grep -m1 '"version"' src-tauri/tauri.conf.json | sed -E 's/.*"([0-9][^"]*)".*/\1/')
+          cargo=$(grep -m1 '^version' src-tauri/Cargo.toml | sed -E 's/.*"([^"]*)".*/\1/')
+          [ "$v" = "$conf" ] && [ "$v" = "$cargo" ] \
+            || { echo "::error::tag $v, tauri.conf.json $conf, Cargo.toml $cargo must all match"; exit 1; }
+
+  build:
+    needs: verify
+    strategy:
+      fail-fast: true
+      matrix:
+        include:
+          - os: windows-latest
+            target: x86_64-pc-windows-msvc
+            binary: src-tauri/target/x86_64-pc-windows-msvc/release/orbit.exe
+            asset: orbit-${{ github.ref_name }}-windows-x64.zip
+          - os: ubuntu-22.04
+            target: x86_64-unknown-linux-gnu
+            binary: src-tauri/target/x86_64-unknown-linux-gnu/release/orbit
+            asset: orbit-${{ github.ref_name }}-linux-x64.tar.gz
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Linux dependencies
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libwebkit2gtk-4.1-dev libgtk-3-dev libsoup-3.0-dev \
+            libayatana-appindicator3-dev librsvg2-dev patchelf
+
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri
+
+      - run: pnpm install --frozen-lockfile
+      - name: Build executable (no installer)
+        run: pnpm tauri build --target ${{ matrix.target }} --no-bundle
+
+      - name: Package (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: Compress-Archive -Path "${{ matrix.binary }}" -DestinationPath "${{ matrix.asset }}"
+      - name: Package (Linux)
+        if: runner.os == 'Linux'
+        run: tar -czf "${{ matrix.asset }}" -C "$(dirname '${{ matrix.binary }}')" orbit
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.asset }}
+          path: ${{ matrix.asset }}
+          if-no-files-found: error
+
+  release:
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: dist
+          merge-multiple: true
+      - name: Create GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "$GITHUB_REF_NAME" dist/* \
+            --repo "$GITHUB_REPOSITORY" \
+            --title "Orbit $GITHUB_REF_NAME" \
+            --generate-notes

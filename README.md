@@ -4,7 +4,7 @@ A local-first personal productivity command center for Windows: **calendar + kan
 
 Orbit is not just another calendar or kanban app. The differentiator is a Claude-powered assistant that can read and modify your schedule and tasks through a controlled set of tools, with you approving every change that matters.
 
-> Status: planning. See [ROADMAP.md](ROADMAP.md) for the plan and [CLAUDE.md](CLAUDE.md) for development guidance.
+> Status: Phase 0 (foundation) done. See [ROADMAP.md](ROADMAP.md) for the plan and [CLAUDE.md](CLAUDE.md) for development guidance.
 
 ## Vision
 
@@ -102,4 +102,25 @@ Claude API usage is billed separately from a Claude subscription (Pro/Max does n
 
 ## Getting started
 
-Not yet scaffolded. Planned prerequisites: Rust toolchain, Node.js, Tauri 2 prerequisites for Windows (WebView2, MSVC build tools).
+Prerequisites: Rust toolchain, Node.js, [pnpm](https://pnpm.io), and the Tauri 2 prerequisites (on Windows: WebView2 and MSVC build tools; on Linux: `webkit2gtk-4.1`, GTK 3, libsoup 3).
+
+```
+pnpm install
+pnpm tauri dev
+```
+
+## Building
+
+Orbit is built as a plain **executable, not an installer**.
+
+| Command | Output |
+| --- | --- |
+| `make windows` | `src-tauri/target/x86_64-pc-windows-msvc/release/orbit.exe` |
+| `make linux` | `src-tauri/target/release/orbit` (Linux hosts only) |
+| `make clean` | runs `cargo clean` |
+
+On Linux/WSL, `make windows` cross-compiles using `clang`, `lld`, `llvm`, the `x86_64-pc-windows-msvc` Rust target and `cargo-xwin` (`cargo install --locked cargo-xwin`). On Windows it builds natively. Cross-compiled output should still be tested on Windows.
+
+## Releases
+
+Pushing a tag like `v1.0.0` (the commit must be on `main`, and the version must match `tauri.conf.json` and `Cargo.toml`) triggers the GitHub Actions release workflow. It builds Windows (`.zip` with `orbit.exe`) and Linux (`.tar.gz`) executables and attaches them to a GitHub release. There are no installers and no macOS builds.

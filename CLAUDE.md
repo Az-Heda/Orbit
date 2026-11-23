@@ -72,12 +72,21 @@ src-tauri/migrations/ SQL migrations
 - Check [ROADMAP.md](ROADMAP.md) for the current phase before starting work; tick items off when done.
 - When a new feature idea is accepted, add it to README.md, CLAUDE.md (if it affects architecture/rules) and ROADMAP.md together.
 
-## Build and test (once scaffolded)
+## Build and test
+
+Package manager is **pnpm** (never npm/yarn; commit `pnpm-lock.yaml`).
 
 ```
-npm install
-npm run tauri dev        # run app
+pnpm install
+pnpm tauri dev           # run app
 cargo test               # in src-tauri/
 cargo clippy -- -D warnings
-npm run check            # svelte-check
+pnpm run check           # svelte-check
 ```
+
+## Building and releasing
+
+- **"Build the project" means producing an executable, not an installer.** Always use `--no-bundle` (the Makefile does). Never run a bare `tauri build` and never add installer targets (NSIS/MSI/deb/AppImage/dmg) to builds or releases.
+- `make windows` builds `src-tauri/target/x86_64-pc-windows-msvc/release/orbit.exe` (cross-compiled with `cargo-xwin` on Linux/WSL, native on Windows). `make linux` builds `src-tauri/target/release/orbit` (Linux hosts only). `make clean` runs `cargo clean`. Windows is the primary target.
+- **No macOS builds or releases.**
+- Releases: `.github/workflows/release.yml` runs when a tag like `v1.0.0` is pushed. The tagged commit must be on `main`, and the tag must equal the version in `src-tauri/tauri.conf.json` and `src-tauri/Cargo.toml`. It builds Windows and Linux executables and publishes them (zip / tar.gz) to a GitHub release.
