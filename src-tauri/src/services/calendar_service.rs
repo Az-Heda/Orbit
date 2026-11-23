@@ -178,6 +178,7 @@ impl CalendarService {
     ) -> DomainResult<(String, Event, EventUpdate)> {
         let id = parse_uuid(id, "event id")?;
         let cur = self.require_event(&id).await?;
+        ensure_editable(&cur)?;
         let all_day = input.all_day.unwrap_or(cur.all_day);
         let rule = match &input.recurrence_rule {
             Some(r) => Some(r.as_str()).filter(|r| !r.trim().is_empty()),
@@ -244,13 +245,14 @@ impl CalendarService {
     }
 
     pub async fn delete_event(&self, id: &str, actor: Actor) -> DomainResult<()> {
-        self.repo
-            .delete_event(&parse_uuid(id, "event id")?, actor)
-            .await
+        let id = parse_uuid(id, "event id")?;
+        ensure_editable(&self.require_event(&id).await?)?;
+        self.repo.delete_event(&id, actor).await
     }
 
     async fn recurring_event(&self, id: &str) -> DomainResult<Event> {
         let ev = self.require_event(&parse_uuid(id, "event id")?).await?;
+        ensure_editable(&ev)?;
         if ev.recurrence_rule.is_none() {
             return Err(invalid("event is not recurring"));
         }
@@ -319,6 +321,7 @@ impl CalendarService {
         actor: Actor,
     ) -> DomainResult<()> {
         let id = parse_uuid(event_id, "event id")?;
+        ensure_editable(&self.require_event(&id).await?)?;
         self.repo
             .clear_exception(
                 &id,
@@ -600,4 +603,14 @@ impl CalendarService {
         summary.skipped_duplicates = skipped;
         Ok(summary)
     }
+}
+
+/// Events from a subscribed feed are read-only for everyone (UI and AI alike).
+pub fn ensure_editable(ev: &Event) -> DomainResult<()> {
+    if ev.external_calendar_id.is_some() {
+        return Err(invalid(
+            "this event comes from a subscribed calendar and is read-only",
+        ));
+    }
+    Ok(())
 }

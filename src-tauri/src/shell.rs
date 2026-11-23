@@ -316,6 +316,16 @@ pub fn setup(app: &AppHandle, hidden: bool) -> tauri::Result<()> {
     tauri::async_runtime::spawn(state.engine.clone().run(state.bus.subscribe()));
     // Scheduler: timers, reminders and time-based rules. A tick after a long sleep catches up once.
     tauri::async_runtime::spawn(state.scheduler.clone().run(Duration::from_secs(20)));
+    // Refresh subscribed calendars at startup and then hourly (read-only, opt-in: no-op without any).
+    let external = state.external.clone();
+    tauri::async_runtime::spawn(async move {
+        let mut every = tokio::time::interval(Duration::from_secs(3600));
+        every.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
+        loop {
+            every.tick().await;
+            external.sync_all().await;
+        }
+    });
     // Relay domain events to the UI so open windows can refresh.
     let relay_app = app.clone();
     let mut rx = state.bus.subscribe();

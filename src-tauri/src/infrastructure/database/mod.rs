@@ -4,6 +4,7 @@ mod activity_repo;
 mod ai_repo;
 mod automation_repo;
 mod calendar_repo;
+mod external_repo;
 mod inbox_repo;
 mod note_repo;
 mod project_repo;
@@ -28,6 +29,7 @@ pub use automation_repo::{
     SqliteFiredRepository,
 };
 pub use calendar_repo::{CalendarRepository, ImportEvent, SqliteCalendarRepository};
+pub use external_repo::{ExternalCalendarRepository, SqliteExternalCalendarRepository};
 pub use inbox_repo::{InboxRepository, SqliteInboxRepository};
 pub use note_repo::{NoteRepository, SqliteNoteRepository};
 pub use project_repo::{ProjectRepository, SqliteProjectRepository};

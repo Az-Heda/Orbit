@@ -37,6 +37,9 @@ pub trait TimerRepository: Send + Sync {
         actor: Actor,
     ) -> DomainResult<FocusSession>;
     async fn task_exists(&self, task_id: &str) -> DomainResult<bool>;
+    async fn get_session(&self, id: &str) -> DomainResult<Option<FocusSession>>;
+    /// The one open top-level task sitting in an "active" column, if there is exactly one.
+    async fn sole_active_task(&self) -> DomainResult<Option<String>>;
 }
 
 pub struct SqliteTimerRepository {
@@ -248,6 +251,29 @@ impl TimerRepository for SqliteTimerRepository {
         .await?;
         tx.commit().await?;
         Ok(after)
+    }
+
+    async fn sole_active_task(&self) -> DomainResult<Option<String>> {
+        let rows: Vec<(String,)> = sqlx::query_as(
+            "SELECT t.id FROM tasks t JOIN board_columns c ON c.id = t.column_id
+             WHERE c.kind = 'active' AND c.deleted_at IS NULL AND t.deleted_at IS NULL
+               AND t.parent_id IS NULL AND t.completed_at IS NULL LIMIT 2",
+        )
+        .fetch_all(&self.pool)
+        .await?;
+        Ok(match rows.as_slice() {
+            [(id,)] => Some(id.clone()),
+            _ => None,
+        })
+    }
+
+    async fn get_session(&self, id: &str) -> DomainResult<Option<FocusSession>> {
+        Ok(sqlx::query_as(sqlx::AssertSqlSafe(format!(
+            "SELECT {SESSION_COLS} FROM focus_sessions WHERE id = ?"
+        )))
+        .bind(id)
+        .fetch_optional(&self.pool)
+        .await?)
     }
 
     async fn task_exists(&self, task_id: &str) -> DomainResult<bool> {

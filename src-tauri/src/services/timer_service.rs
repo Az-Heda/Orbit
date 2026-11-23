@@ -34,6 +34,7 @@ pub struct TimerService {
     repo: Arc<dyn TimerRepository>,
     clock: Clock,
     bus: MaybeBus,
+    settings: Option<Arc<super::SettingsService>>,
 }
 
 impl TimerService {
@@ -46,6 +47,7 @@ impl TimerService {
             repo,
             clock,
             bus: None,
+            settings: None,
         }
     }
 
@@ -53,6 +55,22 @@ impl TimerService {
     pub fn with_bus(mut self, bus: Arc<EventBus>) -> Self {
         self.bus = Some(bus);
         self
+    }
+
+    /// Read the `timers.auto_link` setting (default on).
+    pub fn with_settings(mut self, settings: Arc<super::SettingsService>) -> Self {
+        self.settings = Some(settings);
+        self
+    }
+
+    async fn auto_link_enabled(&self) -> bool {
+        match &self.settings {
+            Some(s) => match s.get("timers.auto_link").await {
+                Ok(Some(v)) => serde_json::from_str(&v.value).unwrap_or(true),
+                _ => true,
+            },
+            None => true,
+        }
     }
 
     fn now(&self) -> DateTime<Utc> {
@@ -151,6 +169,10 @@ impl TimerService {
                     });
                 }
                 Some(t)
+            }
+            // No task given: link a focus timer to the single task in progress, if unambiguous.
+            None if phase == "focus" && self.auto_link_enabled().await => {
+                self.repo.sole_active_task().await?
             }
             None => None,
         };
@@ -282,6 +304,17 @@ impl TimerService {
         }
         let task_id = task_id.map(|t| parse_uuid(t, "task id")).transpose()?;
         self.repo.sessions(&from, &to, task_id.as_deref()).await
+    }
+
+    pub async fn get_session(&self, id: &str) -> DomainResult<FocusSession> {
+        let id = parse_uuid(id, "session id")?;
+        self.repo
+            .get_session(&id)
+            .await?
+            .ok_or(DomainError::NotFound {
+                entity: "focus_session",
+                id,
+            })
     }
 
     pub async fn set_session_task(

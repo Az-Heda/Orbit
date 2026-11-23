@@ -33,6 +33,10 @@ pub trait TaskRepository: Send + Sync {
     /// Blockers of a task that are not yet completed.
     async fn unresolved_blockers(&self, id: &str) -> DomainResult<Vec<Task>>;
     async fn blocked_by_ids(&self, id: &str) -> DomainResult<Vec<String>>;
+    /// Dependency links (either direction) touching this task or its subtasks.
+    async fn dependency_links(&self, id: &str) -> DomainResult<i64>;
+    /// Open top-level tasks in a column (where a relocated task is appended).
+    async fn root_count(&self, column_id: &str, excluding: &str) -> DomainResult<i64>;
     async fn add_dependency(
         &self,
         task_id: &str,
@@ -448,6 +452,30 @@ impl TaskRepository for SqliteTaskRepository {
         .bind(id)
         .fetch_all(&self.pool)
         .await?)
+    }
+
+    async fn dependency_links(&self, id: &str) -> DomainResult<i64> {
+        Ok(sqlx::query_as::<_, (i64,)>(
+            "WITH RECURSIVE d(id) AS (
+                SELECT ?1 UNION ALL SELECT t.id FROM tasks t JOIN d ON t.parent_id = d.id WHERE t.deleted_at IS NULL)
+             SELECT COUNT(*) FROM task_dependencies
+             WHERE task_id IN (SELECT id FROM d) OR blocked_by_id IN (SELECT id FROM d)",
+        )
+        .bind(id)
+        .fetch_one(&self.pool)
+        .await?
+        .0)
+    }
+
+    async fn root_count(&self, column_id: &str, excluding: &str) -> DomainResult<i64> {
+        Ok(sqlx::query_as::<_, (i64,)>(
+            "SELECT COUNT(*) FROM tasks WHERE column_id = ? AND parent_id IS NULL AND deleted_at IS NULL AND id != ?",
+        )
+        .bind(column_id)
+        .bind(excluding)
+        .fetch_one(&self.pool)
+        .await?
+        .0)
     }
 
     async fn blocked_by_ids(&self, id: &str) -> DomainResult<Vec<String>> {

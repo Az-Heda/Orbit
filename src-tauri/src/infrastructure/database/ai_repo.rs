@@ -699,6 +699,22 @@ async fn revert_one(
             };
             q.execute(&mut *tx).await?;
         }
+        ("focus_session", "update") => {
+            // Sessions have no updated_at: only revert while the link is still what the AI set.
+            let cur: Option<(Option<String>,)> =
+                sqlx::query_as("SELECT task_id FROM focus_sessions WHERE id = ?")
+                    .bind(id)
+                    .fetch_optional(&mut *tx)
+                    .await?;
+            if cur.map(|c| c.0) != Some(s(after, "task_id")) {
+                return Err(conflict(entity, id));
+            }
+            sqlx::query("UPDATE focus_sessions SET task_id = ? WHERE id = ?")
+                .bind(s(before, "task_id"))
+                .bind(id)
+                .execute(&mut *tx)
+                .await?;
+        }
         _ => {
             return Err(DomainError::Validation(format!(
                 "this action changed a {entity} ({action}), which cannot be undone automatically"

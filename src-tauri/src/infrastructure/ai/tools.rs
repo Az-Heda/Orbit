@@ -8,13 +8,14 @@
 use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 
-use chrono::{DateTime, Duration, NaiveDate, NaiveDateTime, TimeZone, Utc};
+use chrono::{DateTime, Duration, NaiveDate, NaiveDateTime, NaiveTime, TimeZone, Utc};
 use chrono_tz::Tz;
 use serde::{Deserialize, Serialize, de::DeserializeOwned};
 use serde_json::{Value, json};
 
 use crate::domain::activity::Actor;
 use crate::domain::ai::{SharingSettings, validate_memory_text};
+use crate::domain::planning::{RankInput, Slot, free_slots, rank_tasks};
 use crate::domain::recurrence::parse_tz;
 use crate::domain::validation::{clean_text, fmt_utc, invalid, parse_uuid};
 use crate::error::{DomainError, DomainResult};
@@ -34,6 +35,7 @@ pub enum Share {
     Notes,
     Inbox,
     Memories,
+    Focus,
 }
 
 impl Share {
@@ -44,6 +46,7 @@ impl Share {
             Share::Notes => s.notes,
             Share::Inbox => s.inbox,
             Share::Memories => s.memories,
+            Share::Focus => s.focus,
         }
     }
     fn label(self) -> &'static str {
@@ -53,6 +56,7 @@ impl Share {
             Share::Notes => "notes",
             Share::Inbox => "inbox",
             Share::Memories => "memories",
+            Share::Focus => "focus sessions",
         }
     }
 }
@@ -70,6 +74,7 @@ pub struct ToolSpec {
 pub struct ToolEnv {
     pub sharing: SharingSettings,
     pub timezone: String,
+    pub now: DateTime<Utc>,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -136,6 +141,46 @@ fn local(utc: &str, tz: Tz) -> String {
     DateTime::parse_from_rfc3339(utc)
         .map(|d| d.with_timezone(&tz).format("%a %d %b %Y %H:%M").to_string())
         .unwrap_or_else(|_| utc.to_string())
+}
+
+fn slot_json(s: &Slot, tz: Tz) -> Value {
+    json!({
+        "start": s.start.with_timezone(&tz).to_rfc3339(),
+        "end": s.end.with_timezone(&tz).to_rfc3339(),
+        "minutes": s.minutes(),
+    })
+}
+
+fn work_window(start: Option<&str>, end: Option<&str>) -> DomainResult<(NaiveTime, NaiveTime)> {
+    let parse = |v: Option<&str>, d: &str| {
+        NaiveTime::parse_from_str(v.unwrap_or(d), "%H:%M")
+            .map_err(|_| invalid("working hours must be HH:MM"))
+    };
+    let (s, e) = (parse(start, "09:00")?, parse(end, "18:00")?);
+    if e <= s {
+        return Err(invalid("work_end must be after work_start"));
+    }
+    Ok((s, e))
+}
+
+/// `[start, end)` of a local calendar day (default: today in the user's timezone).
+fn day_bounds(
+    date: Option<&str>,
+    now: DateTime<Utc>,
+    tz: Tz,
+) -> DomainResult<(DateTime<Utc>, DateTime<Utc>, NaiveDate)> {
+    let day = match date {
+        Some(d) => NaiveDate::parse_from_str(d.trim(), "%Y-%m-%d")
+            .map_err(|_| invalid("date must be YYYY-MM-DD"))?,
+        None => now.with_timezone(&tz).date_naive(),
+    };
+    let at = |d: NaiveDate| {
+        tz.from_local_datetime(&d.and_hms_opt(0, 0, 0).unwrap_or_default())
+            .earliest()
+            .map(|x| x.with_timezone(&Utc))
+            .ok_or_else(|| invalid("that date does not exist in the timezone"))
+    };
+    Ok((at(day)?, at(day + Duration::days(1))?, day))
 }
 
 fn local_iso(utc: &str, tz: Tz) -> String {
@@ -353,6 +398,61 @@ struct DraftRuleArgs {
     action: Value,
 }
 
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct FreeSlotsArgs {
+    from: String,
+    to: String,
+    duration_minutes: i64,
+    work_start: Option<String>,
+    work_end: Option<String>,
+    limit: Option<usize>,
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct DayArgs {
+    date: Option<String>,
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct RangeArgs {
+    from: String,
+    to: String,
+    limit: Option<usize>,
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct SubtaskItem {
+    title: String,
+    description: Option<String>,
+    priority: Option<i64>,
+    due: Option<String>,
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct CreateSubtasksArgs {
+    parent_id: String,
+    subtasks: Vec<SubtaskItem>,
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct MoveTasksArgs {
+    task_ids: Vec<String>,
+    column_id: String,
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct LinkSessionArgs {
+    session_id: String,
+    task_id: Option<String>,
+}
+
 // ---------- planned actions ----------
 
 enum Action {
@@ -396,6 +496,12 @@ enum Action {
     Remember(String),
     Forget(String),
     Rule(RuleInput),
+    CreateSubtasks(String, Vec<CreateTaskInput>),
+    MoveTasks {
+        ids: Vec<String>,
+        column_id: String,
+    },
+    LinkSession(String, Option<String>),
 }
 
 struct Plan {
@@ -676,6 +782,88 @@ fn catalog() -> Vec<ToolSpec> {
             true,
             None,
         ),
+        // ----- planning (read) -----
+        spec(
+            "find_free_slots",
+            "Find free time between two moments for something that needs `duration_minutes`, inside daily working hours (default 09:00-18:00 in the user's timezone). Use it before proposing a calendar block (e.g. \"block 2 hours tomorrow for studying\"), then call create_event with one of the slots.",
+            obj(
+                json!({ "from": when("Start, e.g. 2026-03-10 or 2026-03-10T09:00"), "to": when("End; at most 60 days after from"), "duration_minutes": { "type": "integer", "minimum": 5, "maximum": 480 }, "work_start": { "type": "string", "description": "HH:MM, default 09:00" }, "work_end": { "type": "string", "description": "HH:MM, default 18:00" }, "limit": { "type": "integer", "minimum": 1, "maximum": 30 } }),
+                &["from", "to", "duration_minutes"],
+            ),
+            false,
+            c,
+        ),
+        spec(
+            "suggest_next_tasks",
+            "Rank the user's open, unblocked tasks by what deserves attention now (overdue, due soon, priority, already in progress). Use it for \"what should I work on next?\". Blocked tasks are excluded and counted.",
+            obj(
+                json!({ "limit": { "type": "integer", "minimum": 1, "maximum": 20 } }),
+                &[],
+            ),
+            false,
+            t,
+        ),
+        spec(
+            "plan_day",
+            "Gather what is needed to plan one day: its events, the ranked unblocked tasks, overdue count and free slots (working hours). Then propose time blocks with create_event if the user wants them.",
+            obj(
+                json!({ "date": { "type": "string", "description": "YYYY-MM-DD in the user's timezone; default today" } }),
+                &[],
+            ),
+            false,
+            None,
+        ),
+        spec(
+            "daily_summary",
+            "Summarise a day: tasks completed, tasks still open and due, events, and (if shared) focus time.",
+            obj(
+                json!({ "date": { "type": "string", "description": "YYYY-MM-DD in the user's timezone; default today" } }),
+                &[],
+            ),
+            false,
+            None,
+        ),
+        spec(
+            "get_focus_sessions",
+            "List recorded focus sessions between two moments, with the task each is linked to (or none).",
+            obj(
+                json!({ "from": when("Start"), "to": when("End; at most 60 days after from"), "limit": { "type": "integer", "minimum": 1, "maximum": 100 } }),
+                &["from", "to"],
+            ),
+            false,
+            Some(Share::Focus),
+        ),
+        // ----- planning (write) -----
+        spec(
+            "create_subtasks",
+            "Propose breaking a task into several subtasks at once (1-20). Nothing is created until the user confirms.",
+            obj(
+                json!({ "parent_id": id("Task to break down"), "subtasks": { "type": "array", "minItems": 1, "maxItems": 20, "items": { "type": "object", "properties": { "title": { "type": "string" }, "description": { "type": "string" }, "priority": prio.clone(), "due": when("Due date/time") }, "required": ["title"], "additionalProperties": false } } }),
+                &["parent_id", "subtasks"],
+            ),
+            true,
+            t,
+        ),
+        spec(
+            "move_tasks",
+            "Propose moving several top-level tasks (up to 30) to one column, including a column on a different board or project (e.g. gather all Rust tasks into the Rust project). Tasks with dependencies cannot leave their board. Always needs the user's confirmation.",
+            obj(
+                json!({ "task_ids": { "type": "array", "minItems": 1, "maxItems": 30, "items": { "type": "string" } }, "column_id": id("Target column id from list_projects") }),
+                &["task_ids", "column_id"],
+            ),
+            true,
+            t,
+        ),
+        spec(
+            "link_focus_session",
+            "Propose linking a recorded focus session to a task (or unlinking it with task_id omitted).",
+            obj(
+                json!({ "session_id": id("Focus session id from get_focus_sessions"), "task_id": id("Task id; omit to unlink") }),
+                &["session_id"],
+            ),
+            true,
+            Some(Share::Focus),
+        ),
     ]
 }
 
@@ -828,6 +1016,151 @@ impl Tools {
                 let total = tasks.len();
                 tasks.truncate(limit);
                 Ok(json!({ "total": total, "returned": tasks.len(), "tasks": tasks }))
+            }
+            "find_free_slots" => {
+                let a: FreeSlotsArgs = args(input)?;
+                let (from, to) = (parse_when(&a.from, tz)?, parse_when(&a.to, tz)?);
+                if from >= to || to - from > Duration::days(60) {
+                    return Err(invalid("from must be before to, at most 60 days apart"));
+                }
+                if !(5..=480).contains(&a.duration_minutes) {
+                    return Err(invalid("duration_minutes must be between 5 and 480"));
+                }
+                let (ws, we) = work_window(a.work_start.as_deref(), a.work_end.as_deref())?;
+                let slots = self.free(from, to, a.duration_minutes, tz, ws, we).await?;
+                let limit = a.limit.unwrap_or(10).clamp(1, 30);
+                Ok(json!({
+                    "timezone": env.timezone,
+                    "slots": slots.iter().take(limit).map(|x| slot_json(x, tz)).collect::<Vec<_>>(),
+                    "total_slots": slots.len(),
+                }))
+            }
+            "suggest_next_tasks" => {
+                let a: Limit = args(input)?;
+                let (ranked, blocked, overdue) = self.ranked_open(env.now, tz).await?;
+                Ok(json!({
+                    "now": local_iso(&fmt_utc(env.now), tz),
+                    "blocked_excluded": blocked, "overdue": overdue,
+                    "tasks": ranked.into_iter().take(a.limit.unwrap_or(5).clamp(1, 20) as usize).collect::<Vec<_>>(),
+                }))
+            }
+            "plan_day" => {
+                let a: DayArgs = args(input)?;
+                let (start, end, date) = day_bounds(a.date.as_deref(), env.now, tz)?;
+                let mut out = json!({ "date": date.to_string(), "timezone": env.timezone });
+                let mut busy = vec![];
+                if env.sharing.calendar {
+                    let items = self
+                        .d
+                        .calendar
+                        .list_range(&fmt_utc(start), &fmt_utc(end))
+                        .await?;
+                    let events: Vec<Value> = items
+                        .iter()
+                        .filter(|i| i.kind == "event")
+                        .take(MAX_RESULT_ITEMS)
+                        .map(|i| json!({ "title": i.title, "start": local_iso(&i.start_at, tz), "end": local_iso(&i.end_at, tz), "all_day": i.all_day }))
+                        .collect();
+                    busy = self.busy(start, end).await?;
+                    out["events"] = json!(events);
+                    let (ws, we) = work_window(None, None)?;
+                    out["free_slots"] = json!(
+                        free_slots(&busy, start.max(env.now.min(end)), end, 30, tz, ws, we)
+                            .iter()
+                            .take(12)
+                            .map(|x| slot_json(x, tz))
+                            .collect::<Vec<_>>()
+                    );
+                } else {
+                    out["events"] = json!("not shared");
+                }
+                let _ = busy;
+                if env.sharing.tasks {
+                    let (ranked, blocked, overdue) = self.ranked_open(env.now, tz).await?;
+                    out["suggested_tasks"] = json!(ranked.into_iter().take(8).collect::<Vec<_>>());
+                    out["blocked_excluded"] = json!(blocked);
+                    out["overdue"] = json!(overdue);
+                } else {
+                    out["suggested_tasks"] = json!("not shared");
+                }
+                Ok(out)
+            }
+            "daily_summary" => {
+                let a: DayArgs = args(input)?;
+                let (start, end, date) = day_bounds(a.date.as_deref(), env.now, tz)?;
+                let mut out = json!({ "date": date.to_string(), "timezone": env.timezone });
+                if env.sharing.tasks {
+                    let (mut done, mut open_due) = (vec![], vec![]);
+                    for p in self.d.projects.list_projects().await? {
+                        for b in self.d.projects.list_boards(&p.id).await? {
+                            for t in self.d.tasks.board_view(&b.id).await?.tasks {
+                                let at = |x: &Option<String>| {
+                                    x.as_deref()
+                                        .and_then(|v| crate::domain::validation::parse_utc(v).ok())
+                                };
+                                if let Some(c) = at(&t.completed_at) {
+                                    if c >= start && c < end {
+                                        done.push(json!({ "id": t.id, "title": t.title, "project": p.name }));
+                                    }
+                                } else if at(&t.due_at).is_some_and(|d| d < end) {
+                                    open_due.push(json!({ "id": t.id, "title": t.title, "project": p.name, "due": t.due_at.as_deref().map(|d| local_iso(d, tz)) }));
+                                }
+                            }
+                        }
+                    }
+                    done.truncate(MAX_RESULT_ITEMS);
+                    open_due.truncate(MAX_RESULT_ITEMS);
+                    out["completed"] = json!(done);
+                    out["unfinished_due_or_overdue"] = json!(open_due);
+                } else {
+                    out["completed"] = json!("not shared");
+                }
+                if env.sharing.calendar {
+                    let items = self
+                        .d
+                        .calendar
+                        .list_range(&fmt_utc(start), &fmt_utc(end))
+                        .await?;
+                    out["events"] = json!(
+                        items
+                            .iter()
+                            .filter(|i| i.kind == "event")
+                            .take(MAX_RESULT_ITEMS)
+                            .map(
+                                |i| json!({ "title": i.title, "start": local_iso(&i.start_at, tz) })
+                            )
+                            .collect::<Vec<_>>()
+                    );
+                }
+                if env.sharing.focus {
+                    let sessions = self
+                        .d
+                        .timers
+                        .sessions(&fmt_utc(start), &fmt_utc(end), None)
+                        .await?;
+                    out["focus_minutes"] =
+                        json!(sessions.iter().map(|x| x.duration_ms).sum::<i64>() / 60_000);
+                    out["focus_sessions"] = json!(sessions.len());
+                }
+                Ok(out)
+            }
+            "get_focus_sessions" => {
+                let a: RangeArgs = args(input)?;
+                let (from, to) = (parse_when(&a.from, tz)?, parse_when(&a.to, tz)?);
+                if to - from > Duration::days(60) {
+                    return Err(invalid("range must be at most 60 days"));
+                }
+                let sessions = self
+                    .d
+                    .timers
+                    .sessions(&fmt_utc(from), &fmt_utc(to), None)
+                    .await?;
+                let rows: Vec<Value> = sessions
+                    .iter()
+                    .take(a.limit.unwrap_or(30).clamp(1, 100))
+                    .map(|x| json!({ "id": x.id, "task_id": x.task_id, "start": local_iso(&x.started_at, tz), "minutes": x.duration_ms / 60_000 }))
+                    .collect();
+                Ok(json!({ "count": sessions.len(), "sessions": rows }))
             }
             "list_templates" => {
                 let t: Vec<Value> = self
@@ -1046,6 +1379,31 @@ impl Tools {
                 d.ai.delete_memory(&id, a).await?;
                 done("memory", &id, "forgotten")
             }
+            Action::CreateSubtasks(parent, inputs) => {
+                let made = d.tasks.create_subtasks(&parent, inputs, a).await?;
+                done(
+                    "task",
+                    &parent,
+                    &format!("{} subtask(s) created", made.len()),
+                )
+            }
+            Action::MoveTasks { ids, column_id } => {
+                for id in &ids {
+                    d.tasks.relocate_task(id, &column_id, true, a).await?;
+                }
+                done(
+                    "task",
+                    ids.first().map(String::as_str).unwrap_or_default(),
+                    &format!("{} task(s) moved", ids.len()),
+                )
+            }
+            Action::LinkSession(session, task) => {
+                let s = d
+                    .timers
+                    .set_session_task(&session, task.as_deref(), a)
+                    .await?;
+                done("focus_session", &s.id, "focus session linked")
+            }
             Action::Rule(r) => {
                 let r = d
                     .rules
@@ -1060,6 +1418,119 @@ impl Tools {
                 done("automation_rule", &r.id, &r.name)
             }
         })
+    }
+
+    /// Merged busy intervals (events only; tasks are not busy time) in `[from, to)`.
+    async fn busy(
+        &self,
+        from: DateTime<Utc>,
+        to: DateTime<Utc>,
+    ) -> DomainResult<Vec<(DateTime<Utc>, DateTime<Utc>)>> {
+        let mut out = vec![];
+        let mut cursor = from;
+        while cursor < to {
+            let next = (cursor + Duration::days(60)).min(to);
+            for i in self
+                .d
+                .calendar
+                .list_range(&fmt_utc(cursor), &fmt_utc(next))
+                .await?
+            {
+                if i.kind != "event" || i.all_day {
+                    continue;
+                }
+                if let (Ok(s), Ok(e)) = (
+                    crate::domain::validation::parse_utc(&i.start_at),
+                    crate::domain::validation::parse_utc(&i.end_at),
+                ) {
+                    out.push((s, e));
+                }
+            }
+            cursor = next;
+        }
+        Ok(out)
+    }
+
+    async fn free(
+        &self,
+        from: DateTime<Utc>,
+        to: DateTime<Utc>,
+        minutes: i64,
+        tz: Tz,
+        ws: NaiveTime,
+        we: NaiveTime,
+    ) -> DomainResult<Vec<Slot>> {
+        let busy = self.busy(from, to).await?;
+        Ok(free_slots(&busy, from, to, minutes, tz, ws, we))
+    }
+
+    /// Open, unblocked tasks ranked for attention; returns (ranked json, blocked count, overdue count).
+    async fn ranked_open(
+        &self,
+        now: DateTime<Utc>,
+        tz: Tz,
+    ) -> DomainResult<(Vec<Value>, usize, usize)> {
+        let mut inputs = vec![];
+        let mut info: HashMap<String, Value> = HashMap::new();
+        let mut blocked_n = 0;
+        for p in self.d.projects.list_projects().await? {
+            for b in self.d.projects.list_boards(&p.id).await? {
+                let v = self.d.tasks.board_view(&b.id).await?;
+                let cols: HashMap<_, _> = v.columns.iter().map(|c| (c.id.clone(), c)).collect();
+                let open: HashSet<&str> = v
+                    .tasks
+                    .iter()
+                    .filter(|t| t.completed_at.is_none())
+                    .map(|t| t.id.as_str())
+                    .collect();
+                for t in v.tasks.iter().filter(|t| t.completed_at.is_none()) {
+                    let col = cols.get(&t.column_id);
+                    let kind = col.map(|c| c.kind.as_str()).unwrap_or("");
+                    if kind == "done" {
+                        continue;
+                    }
+                    if v.dependencies
+                        .iter()
+                        .any(|d| d.task_id == t.id && open.contains(d.blocked_by_id.as_str()))
+                    {
+                        blocked_n += 1;
+                        continue;
+                    }
+                    inputs.push(RankInput {
+                        id: t.id.clone(),
+                        priority: t.priority,
+                        due_at: t
+                            .due_at
+                            .as_deref()
+                            .and_then(|d| crate::domain::validation::parse_utc(d).ok()),
+                        in_progress: kind == "active",
+                    });
+                    info.insert(
+                        t.id.clone(),
+                        json!({
+                            "id": t.id, "title": t.title, "project": p.name,
+                            "column": col.map(|c| c.name.clone()), "priority": t.priority,
+                            "due": t.due_at.as_deref().map(|d| local_iso(d, tz)),
+                        }),
+                    );
+                }
+            }
+        }
+        let ranked = rank_tasks(&inputs, now, tz);
+        let overdue = ranked
+            .iter()
+            .filter(|r| r.reasons.iter().any(|x| x.starts_with("overdue")))
+            .count();
+        let out = ranked
+            .into_iter()
+            .filter_map(|r| {
+                let mut v = info.remove(&r.id)?;
+                v["score"] = json!(r.score);
+                v["reasons"] = json!(r.reasons);
+                Some(v)
+            })
+            .collect();
+        Ok((out, blocked_n, overdue))
     }
 
     async fn task_summary(&self, id: &str) -> DomainResult<(crate::domain::kanban::Task, String)> {
@@ -1150,6 +1621,110 @@ impl Tools {
                         changes,
                     },
                     action: Action::CreateTask(i),
+                })
+            }
+            "create_subtasks" => {
+                let a: CreateSubtasksArgs = args(input)?;
+                if a.subtasks.is_empty() || a.subtasks.len() > 20 {
+                    return Err(invalid("provide between 1 and 20 subtasks"));
+                }
+                let (parent, col) = self
+                    .task_summary(&parse_uuid(&a.parent_id, "parent id")?)
+                    .await?;
+                let mut inputs = vec![];
+                let mut changes = vec![];
+                for st in a.subtasks {
+                    let i = CreateTaskInput {
+                        column_id: None,
+                        parent_id: Some(parent.id.clone()),
+                        title: st.title,
+                        description: st.description,
+                        priority: st.priority,
+                        due_at: due(&st.due)?.filter(|d| !d.is_empty()),
+                        position: None,
+                    };
+                    let n = self.d.tasks.build_new_task(&i).await?;
+                    changes.push(change(
+                        "Subtask",
+                        None,
+                        Some(match n.due_at.as_deref() {
+                            Some(d) => format!("{} (due {})", n.title, local(d, tz)),
+                            None => n.title.clone(),
+                        }),
+                    ));
+                    inputs.push(i);
+                }
+                Ok(Plan {
+                    preview: Preview {
+                        summary: format!(
+                            "Break “{}” ({col}) into {} subtasks",
+                            parent.title,
+                            inputs.len()
+                        ),
+                        destructive: false,
+                        changes,
+                    },
+                    action: Action::CreateSubtasks(parent.id, inputs),
+                })
+            }
+            "move_tasks" => {
+                let a: MoveTasksArgs = args(input)?;
+                if a.task_ids.is_empty() || a.task_ids.len() > 30 {
+                    return Err(invalid("provide between 1 and 30 task ids"));
+                }
+                let mut seen = HashSet::new();
+                let target = self.d.tasks.column(&a.column_id).await?;
+                let mut changes = vec![];
+                for raw in &a.task_ids {
+                    let id = parse_uuid(raw, "task id")?;
+                    if !seen.insert(id.clone()) {
+                        return Err(invalid("duplicate task id"));
+                    }
+                    if let Some(why) = self.d.tasks.relocate_blocker(&id, &target.id).await? {
+                        let (t, _) = self.task_summary(&id).await?;
+                        return Err(invalid(format!("cannot move “{}”: {why}", t.title)));
+                    }
+                    let (t, from) = self.task_summary(&id).await?;
+                    changes.push(change(&t.title, Some(from), Some(target.name.clone())));
+                }
+                Ok(Plan {
+                    preview: Preview {
+                        summary: format!("Move {} task(s) to “{}”", changes.len(), target.name),
+                        // Bulk operations always need an explicit, prominent confirmation.
+                        destructive: true,
+                        changes,
+                    },
+                    action: Action::MoveTasks {
+                        ids: a.task_ids,
+                        column_id: target.id,
+                    },
+                })
+            }
+            "link_focus_session" => {
+                let a: LinkSessionArgs = args(input)?;
+                let session = self.d.timers.get_session(&a.session_id).await?;
+                let (label, after) = match &a.task_id {
+                    Some(t) => {
+                        let (task, _) = self.task_summary(&parse_uuid(t, "task id")?).await?;
+                        (task.title.clone(), Some(task.title))
+                    }
+                    None => ("(none)".to_string(), None),
+                };
+                let before = match &session.task_id {
+                    Some(t) => self.task_summary(t).await.ok().map(|x| x.0.title),
+                    None => None,
+                };
+                Ok(Plan {
+                    preview: Preview {
+                        summary: format!(
+                            "Link the {} min focus session of {} to “{label}”",
+                            session.duration_ms / 60_000,
+                            local(&session.started_at, tz)
+                        ),
+                        destructive: false,
+                        changes: vec![change("Task", before, after)],
+                    },
+                    action: Action::LinkSession(session.id, a.task_id),
                 })
             }
             "update_task" => {
@@ -1489,6 +2064,7 @@ impl Tools {
             "delete_event" => {
                 let a: EventIdArgs = args(input)?;
                 let e = self.d.calendar.get_event(&a.event_id).await?;
+                crate::services::ensure_editable(&e)?;
                 let tze = parse_tz(&e.timezone)?;
                 Ok(Plan {
                     preview: Preview {

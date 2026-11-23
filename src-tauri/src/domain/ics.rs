@@ -332,6 +332,7 @@ mod tests {
             end_at: "2026-10-19T07:30:00.000Z".into(),
             timezone: "Europe/Rome".into(),
             recurrence_rule: rule.map(str::to_string),
+            external_calendar_id: None,
             created_at: "2026-01-01T00:00:00.000Z".into(),
             updated_at: "2026-01-01T00:00:00.000Z".into(),
         }

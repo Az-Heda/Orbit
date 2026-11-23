@@ -128,6 +128,35 @@ impl TaskService {
         Ok(task)
     }
 
+    /// Create several subtasks of one task atomically.
+    pub async fn create_subtasks(
+        &self,
+        parent_id: &str,
+        inputs: Vec<CreateTaskInput>,
+        actor: Actor,
+    ) -> DomainResult<Vec<Task>> {
+        if inputs.is_empty() || inputs.len() > 30 {
+            return Err(invalid("provide between 1 and 30 subtasks"));
+        }
+        let mut news = Vec::with_capacity(inputs.len());
+        for mut i in inputs {
+            i.column_id = None;
+            i.parent_id = Some(parent_id.to_string());
+            news.push(self.build_new_task(&i).await?);
+        }
+        let created = self.tasks.create_task_trees(&news, actor).await?;
+        for t in &created {
+            emit(
+                &self.bus,
+                DomainEvent::TaskCreated {
+                    task_id: t.id.clone(),
+                    title: t.title.clone(),
+                },
+            );
+        }
+        Ok(created)
+    }
+
     /// Create several validated task trees atomically (used by templates).
     pub async fn create_trees(&self, trees: Vec<NewTask>, actor: Actor) -> DomainResult<Vec<Task>> {
         self.tasks.create_task_trees(&trees, actor).await
@@ -254,6 +283,58 @@ impl TaskService {
         force: bool,
         actor: Actor,
     ) -> DomainResult<Task> {
+        self.move_inner(id, column_id, position, force, false, actor)
+            .await
+    }
+
+    /// Move a top-level task to the end of a column, possibly on another board or project. A task
+    /// that has dependency links cannot leave its board (the links would dangle), and subtasks
+    /// travel with their parent.
+    pub async fn relocate_task(
+        &self,
+        id: &str,
+        column_id: &str,
+        force: bool,
+        actor: Actor,
+    ) -> DomainResult<Task> {
+        let id = parse_uuid(id, "task id")?;
+        let column = self.column(column_id).await?;
+        let position = self.tasks.root_count(&column.id, &id).await?;
+        self.move_inner(&id, &column.id, position, force, true, actor)
+            .await
+    }
+
+    /// Why `relocate_task` would refuse (for previews); None when the move is allowed.
+    pub async fn relocate_blocker(
+        &self,
+        id: &str,
+        column_id: &str,
+    ) -> DomainResult<Option<String>> {
+        let task = self.require_task(&parse_uuid(id, "task id")?).await?;
+        if task.parent_id.is_some() {
+            return Ok(Some("subtasks move together with their parent task".into()));
+        }
+        let target = self.column(column_id).await?;
+        let current = self.projects.get_column(&task.column_id).await?;
+        if current.as_ref().map(|c| &c.board_id) != Some(&target.board_id)
+            && self.tasks.dependency_links(&task.id).await? > 0
+        {
+            return Ok(Some(
+                "it has dependencies, which cannot cross boards; remove them first".into(),
+            ));
+        }
+        Ok(None)
+    }
+
+    async fn move_inner(
+        &self,
+        id: &str,
+        column_id: &str,
+        position: i64,
+        force: bool,
+        cross_board: bool,
+        actor: Actor,
+    ) -> DomainResult<Task> {
         let id = parse_uuid(id, "task id")?;
         let column_id = parse_uuid(column_id, "column id")?;
         if position < 0 {
@@ -273,7 +354,14 @@ impl TaskService {
             })?;
         let current = self.projects.get_column(&task.column_id).await?;
         if current.as_ref().map(|c| &c.board_id) != Some(&target.board_id) {
-            return Err(invalid("tasks can only move within their board"));
+            if !cross_board {
+                return Err(invalid("tasks can only move within their board"));
+            }
+            if self.tasks.dependency_links(&id).await? > 0 {
+                return Err(invalid(
+                    "this task has dependencies; remove them before moving it to another board",
+                ));
+            }
         }
         let changing = task.column_id != column_id;
         let completing = changing && target.kind == "done" && task.completed_at.is_none();

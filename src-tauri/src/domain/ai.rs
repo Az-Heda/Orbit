@@ -103,12 +103,15 @@ pub struct Memory {
 /// What the user lets the assistant read. Everything defaults to the least that is useful:
 /// tasks and calendar on, notes and inbox off.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(default)]
 pub struct SharingSettings {
     pub tasks: bool,
     pub calendar: bool,
     pub notes: bool,
     pub inbox: bool,
     pub memories: bool,
+    /// Focus sessions and time statistics (off by default).
+    pub focus: bool,
 }
 
 impl Default for SharingSettings {
@@ -119,6 +122,7 @@ impl Default for SharingSettings {
             notes: false,
             inbox: false,
             memories: true,
+            focus: false,
         }
     }
 }

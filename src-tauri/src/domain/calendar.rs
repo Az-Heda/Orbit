@@ -12,11 +12,13 @@ pub struct Event {
     pub end_at: String,
     pub timezone: String,
     pub recurrence_rule: Option<String>,
+    /// Set for events that come from a subscribed feed: read-only, never editable (also by the AI).
+    pub external_calendar_id: Option<String>,
     pub created_at: String,
     pub updated_at: String,
 }
 
-pub const EVENT_COLS: &str = "id, uid, title, description, location, all_day, start_at, end_at, timezone, recurrence_rule, created_at, updated_at";
+pub const EVENT_COLS: &str = "id, uid, title, description, location, all_day, start_at, end_at, timezone, recurrence_rule, external_calendar_id, created_at, updated_at";
 
 #[derive(Debug, Clone)]
 pub struct NewEvent {

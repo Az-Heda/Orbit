@@ -5,6 +5,7 @@ mod ai_service;
 mod automation_engine;
 mod automation_service;
 mod calendar_service;
+mod external_calendar_service;
 mod inbox_service;
 mod note_service;
 mod notifier;
@@ -21,7 +22,10 @@ pub use activity_service::ActivityService;
 pub use ai_service::{AiService, ChatEvent, ConversationDetail, StreamSink};
 pub use automation_engine::AutomationEngine;
 pub use automation_service::{AutomationService, RuleInput};
-pub use calendar_service::{CalendarService, CreateEventInput, OverrideInput, UpdateEventInput};
+pub use calendar_service::{
+    CalendarService, CreateEventInput, OverrideInput, UpdateEventInput, ensure_editable,
+};
+pub use external_calendar_service::ExternalCalendarService;
 pub use inbox_service::InboxService;
 pub use note_service::{NoteDetail, NoteService};
 pub use notifier::{Notifier, NullNotifier};

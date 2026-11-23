@@ -121,3 +121,34 @@ pub async fn import_ics_file(
     let text = std::fs::read_to_string(path).map_err(io_err)?;
     Ok(s.calendar.import_ics(&text, &timezone, U).await?)
 }
+
+// ---------- subscribed (read-only) calendars ----------
+
+#[tauri::command]
+pub async fn list_external_calendars(
+    s: State<'_, AppState>,
+) -> AppResult<Vec<crate::domain::external::ExternalCalendar>> {
+    Ok(s.external.list().await?)
+}
+
+#[tauri::command]
+pub async fn add_external_calendar(
+    s: State<'_, AppState>,
+    name: String,
+    url: String,
+) -> AppResult<crate::domain::external::ExternalCalendar> {
+    Ok(s.external.add(&name, &url).await?)
+}
+
+#[tauri::command]
+pub async fn remove_external_calendar(s: State<'_, AppState>, id: String) -> AppResult<()> {
+    Ok(s.external.remove(&id).await?)
+}
+
+#[tauri::command]
+pub async fn sync_external_calendar(
+    s: State<'_, AppState>,
+    id: String,
+) -> AppResult<crate::domain::external::SyncReport> {
+    Ok(s.external.sync(&id).await?)
+}

@@ -718,3 +718,314 @@ async fn errors_surface_and_context_ids_are_validated() {
     );
     assert_eq!(t.s.ai.config().await.model, "claude-opus-5-5");
 }
+
+// ---------- Phase 4: planning, breakdown, organisation, focus ----------
+
+fn proposal_of(ev: &[ChatEvent]) -> crate::domain::ai::Proposal {
+    ev.iter()
+        .find_map(|e| {
+            if let ChatEvent::Proposal { proposal } = e {
+                Some((**proposal).clone())
+            } else {
+                None
+            }
+        })
+        .expect("a proposal")
+}
+
+/// Content of the most recent tool_result the model was shown.
+fn last_result(t: &T) -> String {
+    let reqs = t.script.requests.lock().unwrap();
+    let msgs = &reqs.last().unwrap().messages;
+    msgs.iter()
+        .rev()
+        .find_map(|m| {
+            m["content"]
+                .as_array()?
+                .iter()
+                .find(|b| b["type"] == "tool_result")
+                .map(|b| b["content"].as_str().unwrap_or_default().to_string())
+        })
+        .expect("a tool result")
+}
+
+async fn new_task(t: &T, title: &str) -> crate::domain::kanban::Task {
+    t.s.tasks
+        .create_task(
+            super::CreateTaskInput {
+                column_id: Some(t.column.clone()),
+                parent_id: None,
+                title: title.into(),
+                description: None,
+                priority: None,
+                due_at: None,
+                position: None,
+            },
+            Actor::User,
+        )
+        .await
+        .unwrap()
+}
+
+#[tokio::test]
+async fn breakdown_creates_all_subtasks_in_one_undoable_proposal() {
+    let t = setup(vec![]).await;
+    let parent = new_task(&t, "Ship v1").await;
+    t.script.replies.lock().unwrap().extend([
+        tool(
+            "c",
+            "create_subtasks",
+            json!({"parent_id": parent.id, "subtasks": [{"title": "Spec"}, {"title": "Build", "priority": 2}, {"title": "Test"}]}),
+        ),
+        text("ok"),
+    ]);
+    let (_, ev) = say(&t, None, "break it down").await;
+    let p = proposal_of(&ev);
+    assert_eq!(p.preview["changes"].as_array().unwrap().len(), 3);
+    assert_eq!(count(&t).await, 1, "nothing is created before confirmation");
+    t.s.ai.apply_proposal(&p.id).await.unwrap();
+    assert_eq!(count(&t).await, 4);
+    t.s.ai.undo_proposal(&p.id).await.unwrap();
+    assert_eq!(count(&t).await, 1);
+}
+
+#[tokio::test]
+async fn breakdown_rejects_empty_and_oversized_lists() {
+    let t = setup(vec![]).await;
+    let parent = new_task(&t, "X").await;
+    let many: Vec<_> = (0..21).map(|i| json!({"title": format!("s{i}")})).collect();
+    t.script.replies.lock().unwrap().extend([
+        tool(
+            "a",
+            "create_subtasks",
+            json!({"parent_id": parent.id, "subtasks": []}),
+        ),
+        tool(
+            "b",
+            "create_subtasks",
+            json!({"parent_id": parent.id, "subtasks": many}),
+        ),
+        text("done"),
+    ]);
+    let (_, ev) = say(&t, None, "x").await;
+    assert!(!ev.iter().any(|e| matches!(e, ChatEvent::Proposal { .. })));
+}
+
+#[tokio::test]
+async fn bulk_move_crosses_boards_is_destructive_and_undoable() {
+    let t = setup(vec![]).await;
+    let a = new_task(&t, "Borrow checker notes").await;
+    let b = new_task(&t, "Lifetimes").await;
+    let rust =
+        t.s.projects
+            .create_project("Rust", None, None, Actor::User)
+            .await
+            .unwrap();
+    let rb = t.s.projects.list_boards(&rust.id).await.unwrap().remove(0);
+    let rv = t.s.tasks.board_view(&rb.id).await.unwrap();
+    let target = rv
+        .columns
+        .iter()
+        .find(|c| c.kind == "backlog")
+        .unwrap()
+        .id
+        .clone();
+    t.script.replies.lock().unwrap().extend([
+        tool(
+            "m",
+            "move_tasks",
+            json!({"task_ids": [a.id, b.id], "column_id": target}),
+        ),
+        text("ok"),
+    ]);
+    let (_, ev) = say(&t, None, "gather rust tasks").await;
+    let p = proposal_of(&ev);
+    assert_eq!(
+        p.preview["destructive"], true,
+        "bulk always needs confirmation"
+    );
+    t.s.ai.apply_proposal(&p.id).await.unwrap();
+    assert_eq!(t.s.tasks.get_task(&a.id).await.unwrap().column_id, target);
+    assert_eq!(t.s.tasks.get_task(&b.id).await.unwrap().column_id, target);
+    t.s.ai.undo_proposal(&p.id).await.unwrap();
+    assert_eq!(t.s.tasks.get_task(&a.id).await.unwrap().column_id, t.column);
+}
+
+#[tokio::test]
+async fn bulk_move_refuses_tasks_with_dependencies_across_boards() {
+    let t = setup(vec![]).await;
+    let a = new_task(&t, "A").await;
+    let b = new_task(&t, "B").await;
+    t.s.tasks
+        .add_dependency(&a.id, &b.id, Actor::User)
+        .await
+        .unwrap();
+    let rust =
+        t.s.projects
+            .create_project("Rust", None, None, Actor::User)
+            .await
+            .unwrap();
+    let rb = t.s.projects.list_boards(&rust.id).await.unwrap().remove(0);
+    let rv = t.s.tasks.board_view(&rb.id).await.unwrap();
+    let target = rv.columns[0].id.clone();
+    t.script.replies.lock().unwrap().extend([
+        tool(
+            "m",
+            "move_tasks",
+            json!({"task_ids": [a.id], "column_id": target}),
+        ),
+        text("no"),
+    ]);
+    let (_, ev) = say(&t, None, "move A").await;
+    assert!(!ev.iter().any(|e| matches!(e, ChatEvent::Proposal { .. })));
+    assert!(last_result(&t).contains("dependencies"));
+    assert_eq!(t.s.tasks.get_task(&a.id).await.unwrap().column_id, t.column);
+}
+
+#[tokio::test]
+async fn free_slots_avoid_events_and_next_tasks_skip_blocked() {
+    let t = setup(vec![]).await;
+    t.s.calendar
+        .create_event(
+            super::CreateEventInput {
+                title: "Meeting".into(),
+                description: None,
+                location: None,
+                all_day: Some(false),
+                start_at: "2027-01-11T09:00:00Z".into(),
+                end_at: "2027-01-11T12:00:00Z".into(),
+                timezone: "Europe/Rome".into(),
+                recurrence_rule: None,
+            },
+            Actor::User,
+        )
+        .await
+        .unwrap();
+    t.script.replies.lock().unwrap().extend([
+        tool(
+            "f",
+            "find_free_slots",
+            json!({"from": "2027-01-11T00:00", "to": "2027-01-12T00:00", "duration_minutes": 120}),
+        ),
+        text("ok"),
+    ]);
+    say(&t, None, "find 2 hours").await;
+    let r: Value = serde_json::from_str(&last_result(&t)).unwrap();
+    let slots = r["slots"].as_array().unwrap();
+    assert!(!slots.is_empty());
+    // 10:00-13:00 local is busy; nothing may start inside it.
+    for s in slots {
+        let st = s["start"].as_str().unwrap();
+        assert!(
+            !("2027-01-11T10:00".."2027-01-11T13:00").contains(&st),
+            "{st}"
+        );
+    }
+
+    let a = new_task(&t, "Blocker").await;
+    let b = new_task(&t, "Blocked").await;
+    t.s.tasks
+        .add_dependency(&b.id, &a.id, Actor::User)
+        .await
+        .unwrap();
+    t.script
+        .replies
+        .lock()
+        .unwrap()
+        .extend([tool("n", "suggest_next_tasks", json!({})), text("ok")]);
+    say(&t, None, "what next").await;
+    let r: Value = serde_json::from_str(&last_result(&t)).unwrap();
+    assert_eq!(r["blocked_excluded"], 1);
+    let ids: Vec<_> = r["tasks"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|x| x["id"].as_str().unwrap().to_string())
+        .collect();
+    assert!(ids.contains(&a.id) && !ids.contains(&b.id));
+}
+
+#[tokio::test]
+async fn focus_data_needs_its_own_sharing_permission() {
+    let t = setup(vec![]).await;
+    t.script.replies.lock().unwrap().extend([
+        tool(
+            "g",
+            "get_focus_sessions",
+            json!({"from": "2027-01-01", "to": "2027-01-02"}),
+        ),
+        text("no"),
+    ]);
+    say(&t, None, "sessions?").await;
+    assert!(last_result(&t).contains("not allowed"));
+    assert!(!t.s.ai.sharing().await.focus, "off by default");
+}
+
+#[tokio::test]
+async fn focus_timer_links_to_the_sole_active_task_and_can_be_relinked_and_undone() {
+    let t = setup(vec![]).await;
+    let task = new_task(&t, "Deep work").await;
+    let other = new_task(&t, "Other").await;
+    let col = t.s.tasks.column(&t.column).await.unwrap();
+    let v = t.s.tasks.board_view(&col.board_id).await.unwrap();
+    let active = v
+        .columns
+        .iter()
+        .find(|c| c.kind == "active")
+        .unwrap()
+        .id
+        .clone();
+    t.s.tasks
+        .move_task(&task.id, &active, 0, true, Actor::User)
+        .await
+        .unwrap();
+
+    let timer =
+        t.s.timers
+            .start(
+                super::StartTimerInput {
+                    kind: "countdown".into(),
+                    label: None,
+                    task_id: None,
+                    duration_ms: Some(60_000),
+                    phase: None,
+                },
+                Actor::User,
+            )
+            .await
+            .unwrap();
+    assert_eq!(timer.timer.task_id.as_deref(), Some(task.id.as_str()));
+    tokio::time::sleep(std::time::Duration::from_millis(1100)).await;
+    t.s.timers.stop(&timer.timer.id).await.unwrap();
+    let sessions =
+        t.s.timers
+            .sessions("2000-01-01T00:00:00Z", "2100-01-01T00:00:00Z", None)
+            .await
+            .unwrap();
+    assert_eq!(sessions.len(), 1);
+    assert_eq!(sessions[0].task_id.as_deref(), Some(task.id.as_str()));
+
+    t.s.ai
+        .set_sharing(crate::domain::ai::SharingSettings {
+            focus: true,
+            ..t.s.ai.sharing().await
+        })
+        .await
+        .unwrap();
+    t.script.replies.lock().unwrap().extend([
+        tool(
+            "l",
+            "link_focus_session",
+            json!({"session_id": sessions[0].id, "task_id": other.id}),
+        ),
+        text("ok"),
+    ]);
+    let (_, ev) = say(&t, None, "relink").await;
+    let p = proposal_of(&ev);
+    t.s.ai.apply_proposal(&p.id).await.unwrap();
+    let after = t.s.timers.get_session(&sessions[0].id).await.unwrap();
+    assert_eq!(after.task_id.as_deref(), Some(other.id.as_str()));
+    t.s.ai.undo_proposal(&p.id).await.unwrap();
+    let back = t.s.timers.get_session(&sessions[0].id).await.unwrap();
+    assert_eq!(back.task_id.as_deref(), Some(task.id.as_str()));
+}

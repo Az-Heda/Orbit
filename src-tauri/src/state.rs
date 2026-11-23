@@ -17,6 +17,7 @@ pub struct AppState {
     pub tasks: Arc<TaskService>,
     pub templates: Arc<TemplateService>,
     pub calendar: Arc<CalendarService>,
+    pub external: Arc<ExternalCalendarService>,
     pub notes: Arc<NoteService>,
     pub search: Arc<SearchService>,
     pub timers: Arc<TimerService>,
@@ -66,7 +67,8 @@ impl AppState {
                 Arc::new(SqliteTimerRepository::new(pool.clone())),
                 clock.clone(),
             )
-            .with_bus(bus.clone()),
+            .with_bus(bus.clone())
+            .with_settings(settings.clone()),
         );
         let inbox = Arc::new(
             InboxService::new(
@@ -108,6 +110,11 @@ impl AppState {
             project_repo,
             tasks.clone(),
         ));
+        let external = Arc::new(ExternalCalendarService::new(
+            Arc::new(SqliteExternalCalendarRepository::new(pool.clone())),
+            crate::infrastructure::feeds::default_feed_secrets(),
+            Arc::new(crate::infrastructure::feeds::HttpFeedFetcher::new()),
+        ));
         let ai_repo: Arc<dyn AiRepository> = Arc::new(SqliteAiRepository::new(pool.clone()));
         let tools = Tools::new(ToolDeps {
             tasks: tasks.clone(),
@@ -139,6 +146,7 @@ impl AppState {
             settings,
             tasks,
             calendar,
+            external,
             notes,
             timers,
             inbox,
