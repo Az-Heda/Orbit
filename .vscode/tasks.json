@@ -1,0 +1,37 @@
+{
+  "version": "2.0.0",
+  "tasks": [
+    {
+      "label": "make: help",
+      "type": "shell",
+      "command": "make help",
+      "problemMatcher": []
+    },
+    {
+      "label": "make: deps",
+      "type": "shell",
+      "command": "make deps",
+      "problemMatcher": []
+    },
+    {
+      "label": "make: windows",
+      "type": "shell",
+      "command": "make windows",
+      "group": { "kind": "build", "isDefault": true },
+      "problemMatcher": ["$rustc"]
+    },
+    {
+      "label": "make: linux",
+      "type": "shell",
+      "command": "make linux",
+      "group": "build",
+      "problemMatcher": ["$rustc"]
+    },
+    {
+      "label": "make: clean",
+      "type": "shell",
+      "command": "make clean",
+      "problemMatcher": []
+    }
+  ]
+}
