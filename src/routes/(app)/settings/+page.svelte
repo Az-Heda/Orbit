@@ -5,6 +5,7 @@
   import { BLOCK_LABELS, DEFAULT_WIDGET, loadWidget, saveWidget, type WidgetConfig } from "$lib/widget";
   import { listSettings, recentActivity, setSetting } from "$lib/api/settings";
   import type { ActivityEntry, AppError, Setting } from "$lib/api/types";
+  import AiSettings from "$lib/components/AiSettings.svelte";
   import { theme } from "$lib/stores/theme.svelte";
   import { PRESETS, type ThemeMode } from "$lib/theme";
 
@@ -231,6 +232,8 @@
       {/if}
     </div>
   </section>
+
+  <AiSettings />
 
   <section class="card space-y-4 p-6" aria-labelledby="notif">
     <h2 id="notif" class="text-lg">Reminders</h2>

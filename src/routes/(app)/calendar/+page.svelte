@@ -3,6 +3,7 @@
   import { exportIcsFile, importIcsFile, listCalendarRange, localTimezone } from "$lib/api/calendar";
   import type { CalendarItem } from "$lib/api/types";
   import { addDays, days, overlapsDay, sameDay, shift, startOfDay, viewRange, type View } from "$lib/calendar";
+  import { aiContext } from "$lib/stores/aicontext.svelte";
   import EventDialog, { type Target } from "$lib/components/EventDialog.svelte";
   import { fmtTime } from "$lib/format";
   import { toast } from "$lib/stores/toast.svelte";
@@ -11,6 +12,9 @@
   let anchor = $state(startOfDay(new Date()));
   let items = $state<CalendarItem[]>([]);
   let target = $state<Target>(null);
+  $effect(() => {
+    if (target && "item" in target && target.item.kind === "event") aiContext.set("eventId", target.item.source_id, target.item.title);
+  });
   let notice = $state("");
 
   const range = $derived(viewRange(view, anchor));

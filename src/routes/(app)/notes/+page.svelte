@@ -2,11 +2,15 @@
   import { onMount } from "svelte";
   import * as api from "$lib/api/notes";
   import { renderMarkdown } from "$lib/markdown";
+  import { aiContext } from "$lib/stores/aicontext.svelte";
   import { confirmState } from "$lib/stores/confirm.svelte";
   import { toast } from "$lib/stores/toast.svelte";
 
   let notes = $state<api.Note[]>([]);
   let current = $state<api.NoteDetail | null>(null);
+  $effect(() => {
+    if (current) aiContext.set("noteId", current.id, current.title);
+  });
   let title = $state("");
   let body = $state("");
   let preview = $state(false);

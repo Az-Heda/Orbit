@@ -6,6 +6,7 @@
   import { listen } from "@tauri-apps/api/event";
   import { onMount } from "svelte";
   import { inboxCount } from "$lib/api/inbox";
+  import { aiContext } from "$lib/stores/aicontext.svelte";
 
   let { children } = $props();
   let inbox = $state(0);
@@ -13,6 +14,7 @@
   const nav = [
     { href: "/", label: "Overview", icon: '<rect x="3" y="3" width="7" height="9"/><rect x="14" y="3" width="7" height="5"/><rect x="14" y="12" width="7" height="9"/><rect x="3" y="16" width="7" height="5"/>' },
     { href: "/projects", label: "Projects", icon: '<path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/>' },
+    { href: "/assistant", label: "Assistant", icon: '<path d="M12 3l1.8 4.7L18.5 9.5l-4.7 1.8L12 16l-1.8-4.7L5.5 9.5l4.7-1.8z"/><path d="M19 15l.8 2.2L22 18l-2.2.8L19 21l-.8-2.2L16 18l2.2-.8z"/>' },
     { href: "/inbox", label: "Inbox", icon: '<path d="M22 12h-6l-2 3h-4l-2-3H2"/><path d="M5.5 5h13L22 12v6a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2v-6z"/>' },
     { href: "/calendar", label: "Calendar", icon: '<rect x="3" y="4" width="18" height="18" rx="2"/><path d="M16 2v4M8 2v4M3 10h18"/>' },
     { href: "/notes", label: "Notes", icon: '<path d="M14 3H6a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V9z"/><path d="M14 3v6h6M8 13h8M8 17h5"/>' },
@@ -39,6 +41,8 @@
       goto("/search");
     }
   }
+  // Pre-effect: must run before child pages record their selection for the new route.
+  $effect.pre(() => aiContext.navigate(page.url.pathname));
   const active = (href: string) =>
     href === "/" ? page.url.pathname === "/" : page.url.pathname.startsWith(href);
 </script>

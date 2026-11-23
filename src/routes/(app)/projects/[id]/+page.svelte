@@ -4,6 +4,7 @@
   import type { Board, Project, TaskTemplate } from "$lib/api/types";
   import KanbanBoard from "$lib/components/KanbanBoard.svelte";
   import { confirmState } from "$lib/stores/confirm.svelte";
+  import { aiContext } from "$lib/stores/aicontext.svelte";
   import { toast } from "$lib/stores/toast.svelte";
 
   let project = $state<Project>();
@@ -27,6 +28,11 @@
   $effect(() => {
     void id;
     void load();
+  });
+
+  $effect(() => {
+    aiContext.set("projectId", id, project?.name);
+    aiContext.set("boardId", boardId ?? null, boards.find((b) => b.id === boardId)?.name);
   });
 
   async function addBoard(e: Event) {

@@ -3,6 +3,7 @@
   import type { TaskTemplate } from "$lib/api/types";
   import { BoardStore } from "$lib/stores/board.svelte";
   import TaskDialog from "./TaskDialog.svelte";
+  import { aiContext } from "$lib/stores/aicontext.svelte";
 
   let { boardId, templates }: { boardId: string; templates: TaskTemplate[] } = $props();
 
@@ -12,6 +13,9 @@
   });
 
   let openTaskId = $state<string | null>(null);
+  $effect(() => {
+    if (openTaskId) aiContext.set("taskId", openTaskId, store.task(openTaskId)?.title);
+  });
   let dragId = $state<string | null>(null);
   let overColumn = $state<string | null>(null);
   let drafts = $state<Record<string, string>>({});
