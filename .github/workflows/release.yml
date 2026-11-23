@@ -67,6 +67,11 @@ jobs:
           workspaces: src-tauri
 
       - run: pnpm install --frozen-lockfile
+      - name: Hide build-machine paths from the executable
+        shell: pwsh
+        run: |
+          $h = [Environment]::GetFolderPath('UserProfile')
+          "RUSTFLAGS=--remap-path-prefix=$h=/build/home --remap-path-prefix=$env:GITHUB_WORKSPACE=/build/orbit" | Add-Content $env:GITHUB_ENV
       - name: Build executable (no installer)
         run: pnpm tauri build --target ${{ matrix.target }} --no-bundle
 

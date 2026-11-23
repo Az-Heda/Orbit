@@ -9,6 +9,13 @@
 # the msvc rust target, and cargo-xwin). On a Windows host it builds natively.
 
 WIN_TARGET := x86_64-pc-windows-msvc
+
+# Keep build-machine paths (home directory, project folder) out of the executable: Rust embeds
+# source paths in panic messages. Local builds only; the release workflow does the same.
+HOME_DIR   := $(or $(HOME),$(USERPROFILE))
+ifneq ($(HOME_DIR),)
+export RUSTFLAGS := --remap-path-prefix=$(HOME_DIR)=/build/home --remap-path-prefix=$(CURDIR)=/build/orbit
+endif
 UNAME_S    := $(shell uname -s 2>/dev/null || echo Windows)
 
 .PHONY: help deps windows linux clean
