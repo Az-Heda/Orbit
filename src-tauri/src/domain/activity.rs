@@ -42,3 +42,10 @@ pub struct ActivityEntry {
     pub batch_id: Option<String>,
     pub created_at: String,
 }
+
+tokio::task_local! {
+    /// While set, every activity row written without an explicit batch id joins this batch.
+    /// The AI service wraps the application of one confirmed proposal in it, which is what makes
+    /// "undo this AI action" a lookup by batch id.
+    pub static BATCH: String;
+}

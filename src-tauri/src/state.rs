@@ -3,6 +3,9 @@ use std::sync::Arc;
 use sqlx::SqlitePool;
 
 use crate::domain::events::EventBus;
+use crate::infrastructure::ai::client::{ClaudeClient, ModelClient};
+use crate::infrastructure::ai::secrets::{SecretStore, default_store};
+use crate::infrastructure::ai::tools::{ToolDeps, Tools};
 use crate::infrastructure::database::*;
 use crate::services::*;
 
@@ -10,12 +13,12 @@ use crate::services::*;
 pub struct AppState {
     pub settings: Arc<SettingsService>,
     pub activity: ActivityService,
-    pub projects: ProjectService,
+    pub projects: Arc<ProjectService>,
     pub tasks: Arc<TaskService>,
-    pub templates: TemplateService,
+    pub templates: Arc<TemplateService>,
     pub calendar: Arc<CalendarService>,
     pub notes: Arc<NoteService>,
-    pub search: SearchService,
+    pub search: Arc<SearchService>,
     pub timers: Arc<TimerService>,
     pub stats: StatsService,
     pub inbox: Arc<InboxService>,
@@ -23,10 +26,23 @@ pub struct AppState {
     pub engine: Arc<AutomationEngine>,
     pub scheduler: Arc<Scheduler>,
     pub bus: Arc<EventBus>,
+    pub ai: Arc<AiService>,
 }
 
 impl AppState {
     pub fn new(pool: SqlitePool, notifier: Arc<dyn Notifier>) -> Self {
+        let secrets = default_store();
+        let client: Arc<dyn ModelClient> = Arc::new(ClaudeClient::new(secrets.clone()));
+        Self::with_ai(pool, notifier, secrets, client)
+    }
+
+    /// Like `new`, with the secret store and model client supplied (tests use fakes).
+    pub fn with_ai(
+        pool: SqlitePool,
+        notifier: Arc<dyn Notifier>,
+        secrets: Arc<dyn SecretStore>,
+        client: Arc<dyn ModelClient>,
+    ) -> Self {
         let bus = Arc::new(EventBus::new());
         let clock: crate::services::Clock = Arc::new(chrono::Utc::now);
 
@@ -71,6 +87,7 @@ impl AppState {
             notifier.clone(),
             clock.clone(),
         ));
+        let clock_for_ai = clock.clone();
         let scheduler = Arc::new(Scheduler::new(
             calendar.clone(),
             timers.clone(),
@@ -81,17 +98,44 @@ impl AppState {
             Arc::new(SqliteFiredRepository::new(pool.clone())),
             clock,
         ));
+        let search = Arc::new(SearchService::new(Arc::new(SqliteSearchRepository::new(
+            pool.clone(),
+        ))));
+        let projects = Arc::new(ProjectService::new(project_repo.clone()));
+        let templates = Arc::new(TemplateService::new(
+            Arc::new(SqliteTemplateRepository::new(pool.clone())),
+            task_repo,
+            project_repo,
+            tasks.clone(),
+        ));
+        let ai_repo: Arc<dyn AiRepository> = Arc::new(SqliteAiRepository::new(pool.clone()));
+        let tools = Tools::new(ToolDeps {
+            tasks: tasks.clone(),
+            projects: projects.clone(),
+            templates: templates.clone(),
+            calendar: calendar.clone(),
+            notes: notes.clone(),
+            search: search.clone(),
+            timers: timers.clone(),
+            inbox: inbox.clone(),
+            rules: rules.clone(),
+            ai: ai_repo.clone(),
+        });
+        let ai = Arc::new(AiService::new(
+            ai_repo,
+            tools,
+            settings.clone(),
+            client,
+            secrets,
+            clock_for_ai,
+        ));
         Self {
-            search: SearchService::new(Arc::new(SqliteSearchRepository::new(pool.clone()))),
+            search,
             stats: StatsService::new(Arc::new(SqliteStatsRepository::new(pool.clone()))),
-            activity: ActivityService::new(Arc::new(SqliteActivityRepository::new(pool.clone()))),
-            projects: ProjectService::new(project_repo.clone()),
-            templates: TemplateService::new(
-                Arc::new(SqliteTemplateRepository::new(pool)),
-                task_repo,
-                project_repo,
-                tasks.clone(),
-            ),
+            activity: ActivityService::new(Arc::new(SqliteActivityRepository::new(pool))),
+            projects,
+            templates,
+            ai,
             settings,
             tasks,
             calendar,

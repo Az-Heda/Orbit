@@ -133,6 +133,18 @@ impl TaskService {
         self.tasks.create_task_trees(&trees, actor).await
     }
 
+    /// A column by id (used to describe where a task would go).
+    pub async fn column(&self, id: &str) -> DomainResult<crate::domain::kanban::Column> {
+        let id = parse_uuid(id, "column id")?;
+        self.projects
+            .get_column(&id)
+            .await?
+            .ok_or(DomainError::NotFound {
+                entity: "column",
+                id,
+            })
+    }
+
     pub async fn get_task(&self, id: &str) -> DomainResult<Task> {
         self.require_task(&parse_uuid(id, "task id")?).await
     }
@@ -202,6 +214,36 @@ impl TaskService {
             }
         }
         Ok(())
+    }
+
+    /// The warning a move would raise (open subtasks / unfinished blockers), if any. Lets previews
+    /// show it up front instead of failing at apply time.
+    pub async fn move_warning(&self, id: &str, column_id: &str) -> DomainResult<Option<String>> {
+        let task = self.require_task(&parse_uuid(id, "task id")?).await?;
+        let target = self.column(column_id).await?;
+        if task.column_id == target.id {
+            return Ok(None);
+        }
+        let to_done = target.kind == "done" && task.completed_at.is_none();
+        let to_active = target.kind == "active";
+        Self::warning_text(self.check_warnings(&task, to_done, to_active, false).await)
+    }
+
+    /// The warning completing a task would raise, if any.
+    pub async fn complete_warning(&self, id: &str) -> DomainResult<Option<String>> {
+        let task = self.require_task(&parse_uuid(id, "task id")?).await?;
+        if task.completed_at.is_some() {
+            return Ok(None);
+        }
+        Self::warning_text(self.check_warnings(&task, true, false, false).await)
+    }
+
+    fn warning_text(r: DomainResult<()>) -> DomainResult<Option<String>> {
+        match r {
+            Ok(()) => Ok(None),
+            Err(DomainError::RequiresConfirmation(m)) => Ok(Some(m)),
+            Err(e) => Err(e),
+        }
     }
 
     pub async fn move_task(

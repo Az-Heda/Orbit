@@ -155,12 +155,27 @@ impl CalendarService {
             .await
     }
 
-    pub async fn update_event(
+    /// Validate an event creation without writing anything.
+    pub fn check_create(input: &CreateEventInput) -> DomainResult<()> {
+        Self::resolve_timing(
+            input.all_day.unwrap_or(false),
+            &input.start_at,
+            &input.end_at,
+            &input.timezone,
+            input.recurrence_rule.as_deref(),
+        )?;
+        clean_text(&input.title, "title", 300)?;
+        opt(&input.description, "description", 10_000)?;
+        opt(&input.location, "location", 300)?;
+        Ok(())
+    }
+
+    /// The current event and the validated change that `input` would make to it.
+    async fn build_update(
         &self,
         id: &str,
-        input: UpdateEventInput,
-        actor: Actor,
-    ) -> DomainResult<Event> {
+        input: &UpdateEventInput,
+    ) -> DomainResult<(String, Event, EventUpdate)> {
         let id = parse_uuid(id, "event id")?;
         let cur = self.require_event(&id).await?;
         let all_day = input.all_day.unwrap_or(cur.all_day);
@@ -178,16 +193,49 @@ impl CalendarService {
         let update = EventUpdate {
             title: match &input.title {
                 Some(t) => clean_text(t, "title", 300)?,
-                None => cur.title,
+                None => cur.title.clone(),
             },
-            description: opt(&input.description, "description", 10_000)?.unwrap_or(cur.description),
-            location: opt(&input.location, "location", 300)?.unwrap_or(cur.location),
+            description: opt(&input.description, "description", 10_000)?
+                .unwrap_or_else(|| cur.description.clone()),
+            location: opt(&input.location, "location", 300)?
+                .unwrap_or_else(|| cur.location.clone()),
             all_day,
             start_at,
             end_at,
             timezone,
             recurrence_rule,
         };
+        Ok((id, cur, update))
+    }
+
+    /// What the event would look like after `update_event`, without writing anything.
+    pub async fn plan_update(
+        &self,
+        id: &str,
+        input: &UpdateEventInput,
+    ) -> DomainResult<(Event, Event)> {
+        let (_, cur, u) = self.build_update(id, input).await?;
+        let after = Event {
+            title: u.title,
+            description: u.description,
+            location: u.location,
+            all_day: u.all_day,
+            start_at: u.start_at,
+            end_at: u.end_at,
+            timezone: u.timezone,
+            recurrence_rule: u.recurrence_rule,
+            ..cur.clone()
+        };
+        Ok((cur, after))
+    }
+
+    pub async fn update_event(
+        &self,
+        id: &str,
+        input: UpdateEventInput,
+        actor: Actor,
+    ) -> DomainResult<Event> {
+        let (id, _, update) = self.build_update(id, &input).await?;
         self.repo.update_event(&id, &update, actor).await
     }
 

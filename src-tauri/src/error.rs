@@ -13,6 +13,9 @@ pub enum DomainError {
     RequiresConfirmation(String),
     #[error("storage error: {0}")]
     Storage(String),
+    /// A call to an outside service failed (e.g. the Claude API). Never contains secrets.
+    #[error("{0}")]
+    External(String),
 }
 
 impl From<sqlx::Error> for DomainError {
@@ -37,6 +40,7 @@ impl Serialize for AppError {
             DomainError::NotFound { .. } => "not_found",
             DomainError::RequiresConfirmation(_) => "requires_confirmation",
             DomainError::Storage(_) => "storage",
+            DomainError::External(_) => "external",
         };
         let mut st = s.serialize_struct("AppError", 2)?;
         st.serialize_field("kind", kind)?;

@@ -16,8 +16,8 @@ pub struct RuleInput {
     pub action: Action,
 }
 
-/// CRUD for automation rules. Rules the AI drafts (Phase 3) must still be confirmed by the user
-/// and are created *disabled* until then.
+/// CRUD for automation rules. A rule the AI drafts is only created after the user confirms the
+/// proposal, so it is never created behind the user's back.
 pub struct AutomationService {
     repo: Arc<dyn AutomationRepository>,
 }
@@ -43,6 +43,13 @@ impl AutomationService {
             action_kind: action.kind(),
             action_config: a,
         }
+    }
+
+    /// Validate a rule without saving it.
+    pub fn validate(input: &RuleInput) -> DomainResult<()> {
+        clean_text(&input.name, "name", 120)?;
+        input.trigger.validate()?;
+        input.action.validate()
     }
 
     async fn save(&self, id: Option<&str>, input: RuleInput, actor: Actor) -> DomainResult<Rule> {

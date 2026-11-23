@@ -39,7 +39,14 @@ pub(crate) async fn record(conn: &mut SqliteConnection, a: &NewActivity) -> Doma
     .bind(a.actor.as_str())
     .bind(&a.before_json)
     .bind(&a.after_json)
-    .bind(&a.batch_id)
+    // An enclosing BATCH scope (one confirmed AI proposal) wins over a repo-local batch id so the
+    // whole proposal can be undone as one unit.
+    .bind(
+        crate::domain::activity::BATCH
+            .try_with(|b| b.clone())
+            .ok()
+            .or_else(|| a.batch_id.clone()),
+    )
     .bind(now_utc())
     .execute(conn)
     .await?;
