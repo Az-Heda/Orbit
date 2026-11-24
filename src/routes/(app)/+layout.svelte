@@ -4,6 +4,7 @@
   import ConfirmDialog from "$lib/components/ConfirmDialog.svelte";
   import Toast from "$lib/components/Toast.svelte";
   import UpdateDialog from "$lib/components/UpdateDialog.svelte";
+  import { getVersion } from "@tauri-apps/api/app";
   import { listen } from "@tauri-apps/api/event";
   import { onMount } from "svelte";
   import { inboxCount } from "$lib/api/inbox";
@@ -11,6 +12,7 @@
 
   let { children } = $props();
   let inbox = $state(0);
+  let version = $state("");
 
   const nav = [
     { href: "/", label: "Overview", icon: '<rect x="3" y="3" width="7" height="9"/><rect x="14" y="3" width="7" height="5"/><rect x="14" y="12" width="7" height="9"/><rect x="3" y="16" width="7" height="5"/>' },
@@ -28,6 +30,7 @@
   const refreshInbox = () => inboxCount().then((n) => (inbox = n)).catch(() => {});
   onMount(() => {
     refreshInbox();
+    getVersion().then((v) => (version = v)).catch(() => {});
     const subs = [
       listen("inbox-changed", refreshInbox),
       listen("domain-event", refreshInbox),
@@ -66,6 +69,7 @@
         {#if item.href === "/inbox" && inbox > 0}<span class="chip ml-auto" aria-label="{inbox} new">{inbox}</span>{/if}
       </a>
     {/each}
+    {#if version}<div class="mt-auto px-2 pt-4 font-mono text-sm text-muted" aria-label="Application version">v{version}</div>{/if}
   </nav>
   <main class="grid-bg min-w-0 flex-1 overflow-auto">
     {@render children()}
