@@ -33,7 +33,7 @@ Open your desktop and see your day at a glance in a small floating widget. Hit a
 - **Stats dashboard**: focus hours per day/project, tasks completed over time, streaks and a heatmap calendar, all computed locally.
 - **Customizable widget**: choose the blocks the floating widget shows (clock, next event, timer, active task, inbox count), light/dark/accent themes, and an opacity/click-through ambient mode.
 - **AI memory**: a visible, editable list of preferences/facts the copilot remembers and includes in its context.
-- **Automation rules**: local trigger/action rules (e.g. task moved to Done logs to the journal; timer ends starts a break; every Friday create a review task). Planned: chained "then" steps and named notification channels (Windows, Telegram, Discord) with templates.
+- **Automation rules**: local trigger/action rules (e.g. task moved to Done logs to the journal; timer ends starts a break; every Friday create a review task). A rule is a chain of "then" steps that run in order (a failing step stops the chain), and a step can send a message to a named notification channel (Windows notification, Telegram or Discord) rendered from the channel's template (`{{task.title}}`, `{{rule.name}}`, ...). Bot tokens and webhook URLs live in the Windows Credential Manager and are never shown to the UI or the assistant.
 - **Global search**: one fuzzy search across tasks, events, notes, projects and inbox, available in the palette and main window, keyboard-first.
 
 ## Desktop shortcuts
@@ -87,7 +87,7 @@ Key principles:
 
 ## Data
 
-`orbit.db` lives in the Windows app data directory. Tables: `projects`, `boards`, `columns`, `tasks`, `events`, `focus_sessions`, `settings`, `ai_conversations`, `ai_messages`, `activity_log`, plus `inbox_items`, `notes`, `note_links`, `external_calendars`, `task_dependencies`, `task_templates`, `ai_memories` and `automation_rules`. Subtasks use a parent reference on `tasks`. UUIDs everywhere, migrations, foreign keys, soft deletes.
+`orbit.db` lives in the Windows app data directory. Tables: `projects`, `boards`, `columns`, `tasks`, `events`, `focus_sessions`, `settings`, `ai_conversations`, `ai_messages`, `activity_log`, plus `inbox_items`, `notes`, `note_links`, `external_calendars`, `task_dependencies`, `task_templates`, `ai_memories`, `automation_rules` (a rule holds its ordered steps) and `notification_channels`. Subtasks use a parent reference on `tasks`. UUIDs everywhere, migrations, foreign keys, soft deletes.
 
 **Backups and export.** Orbit snapshots the database daily into `backups/` next to it (keeps the latest 7 by default; configurable). Settings can also export everything to a `.db` file and import one: the file is verified, a safety backup is taken and the swap happens at the next start. Backups can be restored from the same list.
 
@@ -99,7 +99,7 @@ Initial set:
 
 `get_schedule`, `get_tasks`, `create_event`, `update_event`, `create_task`, `move_task`, `delete_task`, `start_timer`.
 
-Added by accepted ideas: `search_notes`, `get_note`, `create_note`, `get_inbox`, `triage_inbox_item`, `add_dependency`, `create_subtask`, `create_task_from_template`, `search_all`, `remember` / `forget` (AI memory, user-editable), `list_projects`, `list_templates`, `update_task`, `delete_event`, `draft_automation_rule`.
+Added by accepted ideas: `search_notes`, `get_note`, `create_note`, `get_inbox`, `triage_inbox_item`, `add_dependency`, `create_subtask`, `create_task_from_template`, `search_all`, `remember` / `forget` (AI memory, user-editable), `list_projects`, `list_templates`, `update_task`, `delete_event`, `draft_automation_rule` (multi-step, may target a channel by name), `list_notification_channels` (names only).
 
 Phase 4 (planning): `find_free_slots`, `plan_day`, `suggest_next_tasks`, `daily_summary`, `get_focus_sessions`, `create_subtasks`, `move_tasks` (bulk, cross-project), `link_focus_session`. Notes questions use `search_notes` / `get_note`. Focus data is its own sharing category (off by default).
 

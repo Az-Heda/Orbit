@@ -10,7 +10,8 @@ Orbit is a local-first planner: everything lives in a database on your computer.
 - **Notes**: markdown notes linked to tasks, events or projects, searchable.
 - **Timers**: Pomodoro and stopwatch. Time is computed from timestamps, so sleeping the computer does not break it.
 - **Stats**: focus time, completed tasks and streaks.
-- **Automation**: simple "when X then Y" rules; each can be disabled.
+- **Automation**: "when X, then A, then B..." rules; each can be disabled or edited. A rule can have up to 10 steps that run top to bottom; if one fails, the rest are skipped and the failure is recorded in the activity log (Settings, Recent activity).
+- **Notification channels** (Settings): named places a rule can send a message to: a Windows notification, a Telegram chat (bot token + chat id) or a Discord channel (webhook URL). Each has a message template with placeholders such as `{{task.title}}` and `{{rule.name}}`, and a "Send test" button. In a rule, add the step "send a message to a channel" and pick the channel by name. Tokens and webhook URLs are stored in the Windows Credential Manager and are not shown again; delivery problems are logged and never stop Orbit. The assistant can draft rules that use a channel by name, but cannot see tokens or create channels.
 - **Search**: `Ctrl+Alt+Space` opens the command palette over everything.
 
 ## Claude assistant (optional)

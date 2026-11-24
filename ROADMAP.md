@@ -112,12 +112,14 @@ All AI items below are tools in `infrastructure/ai/tools.rs` that go through the
 
 ## Phase 6: Automation expansion
 
-- [ ] Chained actions: a rule can have several "Then" steps that run in order (add/remove/reorder in the automation page; a failing step is logged and stops the chain)
-- [ ] Notification channels: Settings page to create named channels of type Windows toast, Telegram (bot token + chat id) or Discord (webhook URL), each with a message template (placeholders such as `{{task.title}}`, `{{rule.name}}`) and a "Send test" button
-- [ ] Automation action "Send a notification": pick the action in the first select, then a second select appears listing the saved channels by name; the channel's template is rendered with the trigger's data
-- [ ] Channel secrets (bot token, webhook URL) live in the credential store, never in the DB, logs or frontend; delivery failures are logged to `activity_log`, rate-limited and never block the rule engine
-- [ ] The AI may draft rules that use a channel by name, but never sees tokens or webhook URLs and cannot create or edit channels
+- [x] Chained actions: a rule can have several "Then" steps that run in order (add/remove/reorder in the automation page; a failing step is logged and stops the chain)
+- [x] Notification channels: Settings page to create named channels of type Windows toast, Telegram (bot token + chat id) or Discord (webhook URL), each with a message template (placeholders such as `{{task.title}}`, `{{rule.name}}`) and a "Send test" button
+- [x] Automation action "Send a notification": pick the action in the first select, then a second select appears listing the saved channels by name; the channel's template is rendered with the trigger's data
+- [x] Channel secrets (bot token, webhook URL) live in the credential store, never in the DB, logs or frontend; delivery failures are logged to `activity_log`, rate-limited and never block the rule engine
+- [x] The AI may draft rules that use a channel by name, but never sees tokens or webhook URLs and cannot create or edit channels
 - [ ] Follow-up: real OAuth sign-in for Google/Outlook calendars (needs registered client IDs; the Phase 4 ICS address covers read-only use meanwhile)
+
+Items 1 to 4 are implemented and unit-tested on Linux (chain order and stop-on-failure, template rendering, migration of existing single-action rules, secret handling, delivery failure logging, rate limiting, AI drafting by channel name, local fake HTTP server for the Telegram request). **Not yet verified:** a real Telegram/Discord delivery, and the Credential Manager store for channel secrets (compiles for Windows via `cargo xwin check`). On non-Windows builds channel secrets are kept in memory only.
 
 ## MVP definition
 
