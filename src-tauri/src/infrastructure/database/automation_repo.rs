@@ -1,9 +1,9 @@
 use async_trait::async_trait;
 use sqlx::SqlitePool;
 
-use super::activity_repo::log_change;
+use super::activity_repo::{log_change, record};
 use super::now_utc;
-use crate::domain::activity::Actor;
+use crate::domain::activity::{Actor, NewActivity};
 use crate::domain::automation::{RULE_COLS, RuleRow};
 use crate::error::{DomainError, DomainResult};
 
@@ -12,8 +12,8 @@ pub struct RuleWrite<'a> {
     pub enabled: bool,
     pub trigger_kind: &'a str,
     pub trigger_config: &'a str,
-    pub action_kind: &'a str,
-    pub action_config: &'a str,
+    /// JSON array of actions (the chain).
+    pub actions: &'a str,
 }
 
 #[async_trait]
@@ -23,6 +23,14 @@ pub trait AutomationRepository: Send + Sync {
     async fn update(&self, id: &str, r: &RuleWrite<'_>, actor: Actor) -> DomainResult<RuleRow>;
     async fn delete(&self, id: &str, actor: Actor) -> DomainResult<()>;
     async fn list(&self, only_enabled: bool) -> DomainResult<Vec<RuleRow>>;
+    /// Record that a step of a rule failed (the chain stopped there) in `activity_log`.
+    async fn log_step_failure(
+        &self,
+        rule_id: &str,
+        step: usize,
+        action_kind: &str,
+        error: &str,
+    ) -> DomainResult<()>;
 }
 
 /// Idempotency keys and tiny markers (e.g. last scheduler tick) that must survive restarts.
@@ -52,16 +60,15 @@ impl AutomationRepository for SqliteAutomationRepository {
         let mut tx = self.pool.begin().await?;
         let now = now_utc();
         let row: RuleRow = sqlx::query_as(sqlx::AssertSqlSafe(format!(
-            "INSERT INTO automation_rules (id, name, enabled, trigger_kind, trigger_config, action_kind, action_config, created_at, updated_at)
-             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?) RETURNING {RULE_COLS}"
+            "INSERT INTO automation_rules (id, name, enabled, trigger_kind, trigger_config, actions, created_at, updated_at)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?) RETURNING {RULE_COLS}"
         )))
         .bind(uuid::Uuid::new_v4().to_string())
         .bind(r.name)
         .bind(r.enabled)
         .bind(r.trigger_kind)
         .bind(r.trigger_config)
-        .bind(r.action_kind)
-        .bind(r.action_config)
+        .bind(r.actions)
         .bind(&now)
         .bind(&now)
         .fetch_one(&mut *tx)
@@ -104,14 +111,13 @@ impl AutomationRepository for SqliteAutomationRepository {
         })?;
         let after: RuleRow = sqlx::query_as(sqlx::AssertSqlSafe(format!(
             "UPDATE automation_rules SET name = ?, enabled = ?, trigger_kind = ?, trigger_config = ?,
-             action_kind = ?, action_config = ?, updated_at = ? WHERE id = ? RETURNING {RULE_COLS}"
+             actions = ?, updated_at = ? WHERE id = ? RETURNING {RULE_COLS}"
         )))
         .bind(r.name)
         .bind(r.enabled)
         .bind(r.trigger_kind)
         .bind(r.trigger_config)
-        .bind(r.action_kind)
-        .bind(r.action_config)
+        .bind(r.actions)
         .bind(now_utc())
         .bind(id)
         .fetch_one(&mut *tx)
@@ -174,13 +180,39 @@ impl AutomationRepository for SqliteAutomationRepository {
             .fetch_all(&self.pool)
             .await?)
     }
+
+    async fn log_step_failure(
+        &self,
+        rule_id: &str,
+        step: usize,
+        action_kind: &str,
+        error: &str,
+    ) -> DomainResult<()> {
+        let mut conn = self.pool.acquire().await?;
+        record(
+            &mut conn,
+            &NewActivity {
+                entity_type: "automation_rule",
+                entity_id: rule_id.to_string(),
+                action: "step_failed",
+                actor: Actor::Automation,
+                before_json: None,
+                after_json: Some(
+                    serde_json::json!({ "step": step + 1, "action": action_kind, "error": error })
+                        .to_string(),
+                ),
+                batch_id: None,
+            },
+        )
+        .await
+    }
 }
 
 fn row_json(r: &RuleRow) -> serde_json::Value {
     serde_json::json!({
         "id": r.id, "name": r.name, "enabled": r.enabled,
         "trigger": serde_json::from_str::<serde_json::Value>(&r.trigger_config).ok(),
-        "action": serde_json::from_str::<serde_json::Value>(&r.action_config).ok(),
+        "actions": serde_json::from_str::<serde_json::Value>(&r.actions).ok(),
     })
 }
 

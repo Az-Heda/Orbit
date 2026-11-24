@@ -7,10 +7,11 @@ use tokio::sync::broadcast;
 use super::notifier::Notifier;
 use super::timer_service::Clock;
 use super::{
-    AutomationService, CreateTaskInput, NoteService, StartTimerInput, TaskService, TimerService,
+    AutomationService, ChannelService, CreateTaskInput, NoteService, StartTimerInput, TaskService,
+    TimerService,
 };
 use crate::domain::activity::Actor;
-use crate::domain::automation::{Action, Rule, render};
+use crate::domain::automation::{Action, RenderCtx, Rule};
 use crate::domain::events::{CAUSE, DomainEvent, Envelope};
 use crate::error::DomainResult;
 
@@ -22,13 +23,18 @@ pub const RATE_LIMIT: usize = 10;
 /// Runs enabled rules against domain events. Actions go through the same services as the UI,
 /// with `Actor::Automation`, so validation and `activity_log` apply.
 ///
-/// Loop protection: (1) a rule ignores events its own action caused, (2) events carry a hop
-/// depth and are dropped at `MAX_DEPTH`, (3) a per-rule rate limit.
+/// A rule is a chain: its steps run in order, and a failing step is logged (tracing and
+/// `activity_log`) and stops the chain. A "send notification" step only fails for configuration
+/// problems (channel deleted, no secret); the delivery itself is detached and logged separately.
+///
+/// Loop protection: (1) a rule ignores events its own actions caused, (2) events carry a hop
+/// depth and are dropped at `MAX_DEPTH`, (3) a per-rule rate limit (a whole chain is one run).
 pub struct AutomationEngine {
     rules: Arc<AutomationService>,
     tasks: Arc<TaskService>,
     notes: Arc<NoteService>,
     timers: Arc<TimerService>,
+    channels: Arc<ChannelService>,
     notifier: Arc<dyn Notifier>,
     clock: Clock,
     recent: Mutex<HashMap<String, VecDeque<chrono::DateTime<chrono::Utc>>>>,
@@ -55,12 +61,53 @@ fn event_task_id(ev: &DomainEvent) -> Option<&str> {
     }
 }
 
+fn trigger_kind(ev: &DomainEvent) -> &'static str {
+    match ev {
+        DomainEvent::TaskCreated { .. } => "task_created",
+        DomainEvent::TaskMoved { .. } => "task_moved",
+        DomainEvent::TaskCompleted { .. } => "task_completed",
+        DomainEvent::TimerEnded { .. } => "timer_ended",
+        DomainEvent::InboxAdded { .. } => "inbox_added",
+    }
+}
+
+/// Template data for one run. `scheduled` rules have no triggering item.
+fn render_ctx(rule: &Rule, ev: &DomainEvent, date: &str, scheduled: bool) -> RenderCtx {
+    let title = if scheduled {
+        String::new()
+    } else {
+        event_title(ev)
+    };
+    let mut ctx = RenderCtx {
+        title: title.clone(),
+        date: date.to_string(),
+        rule_name: rule.name.clone(),
+        trigger: if scheduled {
+            "schedule".into()
+        } else {
+            trigger_kind(ev).into()
+        },
+        ..Default::default()
+    };
+    if !scheduled {
+        match ev {
+            DomainEvent::TaskCreated { .. }
+            | DomainEvent::TaskMoved { .. }
+            | DomainEvent::TaskCompleted { .. } => ctx.task_title = title,
+            DomainEvent::TimerEnded { .. } => ctx.timer_label = title,
+            DomainEvent::InboxAdded { text, .. } => ctx.inbox_text = text.trim().to_string(),
+        }
+    }
+    ctx
+}
+
 impl AutomationEngine {
     pub fn new(
         rules: Arc<AutomationService>,
         tasks: Arc<TaskService>,
         notes: Arc<NoteService>,
         timers: Arc<TimerService>,
+        channels: Arc<ChannelService>,
         notifier: Arc<dyn Notifier>,
         clock: Clock,
     ) -> Self {
@@ -69,6 +116,7 @@ impl AutomationEngine {
             tasks,
             notes,
             timers,
+            channels,
             notifier,
             clock,
             recent: Mutex::new(HashMap::new()),
@@ -138,40 +186,62 @@ impl AutomationEngine {
         true
     }
 
-    /// Run a rule's action. `event` is the triggering event (None for scheduled rules).
+    /// Run a rule's chain. `event` is the triggering event (`scheduled`: there is none).
+    /// Returns true when every step succeeded.
     pub async fn fire(&self, rule: &Rule, depth: u8, event: &DomainEvent) -> bool {
+        self.run_chain(rule, depth, event, false).await
+    }
+
+    async fn run_chain(
+        &self,
+        rule: &Rule,
+        depth: u8,
+        event: &DomainEvent,
+        scheduled: bool,
+    ) -> bool {
         if !self.allow(&rule.id) {
             tracing::warn!("rule '{}' rate limited", rule.name);
             return false;
         }
-        let title = event_title(event);
         let date = (self.clock)().date_naive().to_string();
-        let task_id = event_task_id(event).map(str::to_string);
-        // Events published by the services this action calls inherit this cause.
-        let result = CAUSE
-            .scope(
-                (depth, rule.id.clone()),
-                self.execute(&rule.action, &title, &date, task_id.as_deref()),
-            )
-            .await;
-        match result {
-            Ok(()) => true,
-            Err(e) => {
-                tracing::warn!("rule '{}' failed: {e}", rule.name);
-                false
-            }
-        }
+        let ctx = render_ctx(rule, event, &date, scheduled);
+        let task_id = if scheduled {
+            None
+        } else {
+            event_task_id(event).map(str::to_string)
+        };
+        // Events published by the services these actions call inherit this cause.
+        CAUSE
+            .scope((depth, rule.id.clone()), async {
+                for (i, action) in rule.actions.iter().enumerate() {
+                    if let Err(e) = self.execute(action, &ctx, task_id.as_deref()).await {
+                        tracing::warn!(
+                            "rule '{}' failed at step {} ({}): {e}",
+                            rule.name,
+                            i + 1,
+                            action.kind()
+                        );
+                        self.rules
+                            .log_step_failure(&rule.id, i, action, &e.to_string())
+                            .await;
+                        return false;
+                    }
+                }
+                true
+            })
+            .await
     }
 
     /// Fire a scheduled (time-based) rule.
     pub async fn fire_scheduled(&self, rule: &Rule) -> bool {
-        self.fire(
+        self.run_chain(
             rule,
             0,
             &DomainEvent::InboxAdded {
                 item_id: String::new(),
                 text: String::new(),
             },
+            true,
         )
         .await
     }
@@ -179,8 +249,7 @@ impl AutomationEngine {
     async fn execute(
         &self,
         action: &Action,
-        title: &str,
-        date: &str,
+        ctx: &RenderCtx,
         task_id: Option<&str>,
     ) -> DomainResult<()> {
         const A: Actor = Actor::Automation;
@@ -195,8 +264,8 @@ impl AutomationEngine {
                         CreateTaskInput {
                             column_id: Some(column_id.clone()),
                             parent_id: None,
-                            title: render(t, title, date),
-                            description: description.as_deref().map(|d| render(d, title, date)),
+                            title: ctx.render(t),
+                            description: description.as_deref().map(|d| ctx.render(d)),
                             priority: None,
                             due_at: None,
                             position: None,
@@ -207,7 +276,7 @@ impl AutomationEngine {
             }
             Action::CreateNote { title: t, body } => {
                 self.notes
-                    .create(&render(t, title, date), &render(body, title, date), A)
+                    .create(&ctx.render(t), &ctx.render(body), A)
                     .await?;
             }
             Action::MoveTask { column_id } => {
@@ -225,7 +294,7 @@ impl AutomationEngine {
                     .start(
                         StartTimerInput {
                             kind: timer_kind.clone(),
-                            label: label.as_deref().map(|l| render(l, title, date)),
+                            label: label.as_deref().map(|l| ctx.render(l)),
                             task_id: None,
                             duration_ms: Some(minutes * 60_000),
                             phase: None,
@@ -234,13 +303,13 @@ impl AutomationEngine {
                     )
                     .await?;
             }
+            Action::SendNotification { channel_id } => {
+                self.channels.dispatch(channel_id, ctx.clone()).await?;
+            }
             Action::Notify { title: t, body } => {
                 self.notifier.notify(
-                    &render(t, title, date),
-                    &body
-                        .as_deref()
-                        .map(|b| render(b, title, date))
-                        .unwrap_or_default(),
+                    &ctx.render(t),
+                    &body.as_deref().map(|b| ctx.render(b)).unwrap_or_default(),
                 );
             }
         }

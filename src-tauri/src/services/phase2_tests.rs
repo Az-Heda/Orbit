@@ -26,7 +26,7 @@ fn rule(name: &str, trigger: Trigger, action: Action) -> RuleInput {
         name: name.into(),
         enabled: None,
         trigger,
-        action,
+        actions: vec![action],
     }
 }
 

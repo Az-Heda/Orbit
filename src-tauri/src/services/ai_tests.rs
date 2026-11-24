@@ -1200,3 +1200,137 @@ async fn ai_cannot_propose_changes_to_feed_events() {
     assert!(!ev.iter().any(|e| matches!(e, ChatEvent::Proposal { .. })));
     assert!(last_result(&t).contains("read-only"));
 }
+
+fn maybe_proposal(ev: &[ChatEvent]) -> Option<crate::domain::ai::Proposal> {
+    ev.iter().find_map(|e| {
+        if let ChatEvent::Proposal { proposal } = e {
+            Some((**proposal).clone())
+        } else {
+            None
+        }
+    })
+}
+
+#[tokio::test]
+async fn ai_drafts_a_chained_rule_that_notifies_a_channel_by_name() {
+    use crate::domain::channels::{ChannelInput, ChannelKind};
+    let t = setup(vec![]).await;
+    let hook = "https://discord.com/api/webhooks/42/SECRETHOOK";
+    let ch =
+        t.s.channels
+            .create(
+                ChannelInput {
+                    name: "Team chat".into(),
+                    kind: ChannelKind::Discord,
+                    template: "{{task.title}} done".into(),
+                    chat_id: None,
+                    secret: Some(hook.into()),
+                },
+                Actor::User,
+            )
+            .await
+            .unwrap();
+    t.script.replies.lock().unwrap().extend([
+        tool("l", "list_notification_channels", json!({})),
+        tool(
+            "d",
+            "draft_automation_rule",
+            json!({
+                "name": "Tell the team",
+                "trigger": {"kind": "task_completed"},
+                "actions": [
+                    {"kind": "create_note", "title": "Done: {{task.title}}", "body": ""},
+                    {"kind": "send_notification", "channel": "team CHAT"}
+                ]
+            }),
+        ),
+        text("drafted"),
+    ]);
+    let (_, ev) = say(&t, None, "tell the team when I finish a task").await;
+
+    // The model only ever sees names and kinds, never ids or secrets.
+    {
+        let reqs = t.script.requests.lock().unwrap();
+        let all =
+            serde_json::to_string(&reqs.iter().map(|r| &r.messages).collect::<Vec<_>>()).unwrap();
+        assert!(all.contains("Team chat") && all.contains("discord"));
+        assert!(!all.contains("SECRETHOOK") && !all.contains(&ch.id));
+    }
+
+    let p = maybe_proposal(&ev).expect("a proposal");
+    let changes = p.preview["changes"].to_string();
+    assert!(
+        changes.contains("Then 1") && changes.contains("Then 2"),
+        "{changes}"
+    );
+    assert!(
+        changes.contains("Team chat") && !changes.contains(&ch.id),
+        "{changes}"
+    );
+    assert!(
+        t.s.rules.list().await.unwrap().is_empty(),
+        "nothing before confirmation"
+    );
+
+    t.s.ai.apply_proposal(&p.id).await.unwrap();
+    let rules = t.s.rules.list().await.unwrap();
+    assert_eq!(rules.len(), 1);
+    assert_eq!(rules[0].actions.len(), 2);
+    assert_eq!(
+        rules[0].actions[1],
+        crate::domain::automation::Action::SendNotification {
+            channel_id: ch.id.clone()
+        }
+    );
+    // Same activity-log trail as any AI mutation.
+    let actor: String = sqlx::query_scalar(
+        "SELECT actor FROM activity_log WHERE entity_type = 'automation_rule' AND action = 'create'",
+    )
+    .fetch_one(&t.pool)
+    .await
+    .unwrap();
+    assert_eq!(actor, "ai");
+}
+
+#[tokio::test]
+async fn ai_cannot_use_unknown_channels_or_manage_channels() {
+    let t = setup(vec![]).await;
+    t.script.replies.lock().unwrap().extend([
+        tool(
+            "d",
+            "draft_automation_rule",
+            json!({
+                "name": "x",
+                "trigger": {"kind": "task_completed"},
+                "actions": [{"kind": "send_notification", "channel": "Nope"}]
+            }),
+        ),
+        tool(
+            "raw",
+            "draft_automation_rule",
+            json!({
+                "name": "x",
+                "trigger": {"kind": "task_completed"},
+                "action": {"kind": "send_notification", "channel_id": "11111111-1111-4111-8111-111111111111"}
+            }),
+        ),
+        tool("c", "create_notification_channel", json!({"name": "x"})),
+        text("done"),
+    ]);
+    let (_, ev) = say(&t, None, "notify me").await;
+    assert!(maybe_proposal(&ev).is_none());
+    let reqs = t.script.requests.lock().unwrap();
+    let last = serde_json::to_string(&reqs.last().unwrap().messages).unwrap();
+    assert!(last.contains("no notification channel"), "{last}");
+    assert!(
+        last.contains("needs `channel`"),
+        "raw ids are refused: {last}"
+    );
+    assert!(last.contains("Unknown tool"), "{last}");
+    assert!(
+        !reqs[0].tools.iter().any(|t| t["name"]
+            .as_str()
+            .is_some_and(|n| n.contains("channel") && n != "list_notification_channels")),
+        "no channel-mutating tool is exposed"
+    );
+}

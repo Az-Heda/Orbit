@@ -5,6 +5,7 @@ mod ai_repo;
 mod automation_repo;
 pub mod backup;
 mod calendar_repo;
+mod channel_repo;
 mod external_repo;
 mod inbox_repo;
 mod note_repo;
@@ -30,6 +31,7 @@ pub use automation_repo::{
     SqliteFiredRepository,
 };
 pub use calendar_repo::{CalendarRepository, ImportEvent, SqliteCalendarRepository};
+pub use channel_repo::{ChannelRepository, ChannelWrite, SqliteChannelRepository};
 pub use external_repo::{ExternalCalendarRepository, SqliteExternalCalendarRepository};
 pub use inbox_repo::{InboxRepository, SqliteInboxRepository};
 pub use note_repo::{NoteRepository, SqliteNoteRepository};

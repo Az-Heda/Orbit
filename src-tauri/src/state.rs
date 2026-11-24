@@ -24,6 +24,7 @@ pub struct AppState {
     pub stats: StatsService,
     pub inbox: Arc<InboxService>,
     pub rules: Arc<AutomationService>,
+    pub channels: Arc<ChannelService>,
     pub engine: Arc<AutomationEngine>,
     pub scheduler: Arc<Scheduler>,
     pub bus: Arc<EventBus>,
@@ -81,11 +82,19 @@ impl AppState {
         let rules = Arc::new(AutomationService::new(Arc::new(
             SqliteAutomationRepository::new(pool.clone()),
         )));
+        let channels = Arc::new(ChannelService::new(
+            Arc::new(SqliteChannelRepository::new(pool.clone())),
+            crate::infrastructure::channels::default_channel_secrets(),
+            Arc::new(crate::infrastructure::channels::HttpChannelSender::new()),
+            notifier.clone(),
+            clock.clone(),
+        ));
         let engine = Arc::new(AutomationEngine::new(
             rules.clone(),
             tasks.clone(),
             notes.clone(),
             timers.clone(),
+            channels.clone(),
             notifier.clone(),
             clock.clone(),
         ));
@@ -126,6 +135,7 @@ impl AppState {
             timers: timers.clone(),
             inbox: inbox.clone(),
             rules: rules.clone(),
+            channels: channels.clone(),
             ai: ai_repo.clone(),
         });
         let ai = Arc::new(AiService::new(
@@ -151,6 +161,7 @@ impl AppState {
             timers,
             inbox,
             rules,
+            channels,
             engine,
             scheduler,
             bus,

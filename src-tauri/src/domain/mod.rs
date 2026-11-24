@@ -2,6 +2,7 @@ pub mod activity;
 pub mod ai;
 pub mod automation;
 pub mod calendar;
+pub mod channels;
 pub mod events;
 pub mod external;
 pub mod ics;

@@ -21,9 +21,9 @@ use crate::domain::validation::{clean_text, fmt_utc, invalid, parse_uuid};
 use crate::error::{DomainError, DomainResult};
 use crate::infrastructure::database::AiRepository;
 use crate::services::{
-    AutomationService, CalendarService, CreateEventInput, CreateTaskInput, InboxService,
-    NoteService, ProjectService, RuleInput, SearchService, StartTimerInput, TaskService,
-    TemplateService, TimerService, UpdateEventInput, UpdateTaskInput,
+    AutomationService, CalendarService, ChannelService, CreateEventInput, CreateTaskInput,
+    InboxService, NoteService, ProjectService, RuleInput, SearchService, StartTimerInput,
+    TaskService, TemplateService, TimerService, UpdateEventInput, UpdateTaskInput,
 };
 
 const MAX_RESULT_ITEMS: usize = 100;
@@ -395,7 +395,10 @@ struct ForgetArgs {
 struct DraftRuleArgs {
     name: String,
     trigger: Value,
-    action: Value,
+    /// The chain, in order (preferred).
+    actions: Option<Vec<Value>>,
+    /// A single step (same as a one-element `actions`).
+    action: Option<Value>,
 }
 
 #[derive(Deserialize)]
@@ -519,6 +522,7 @@ pub struct ToolDeps {
     pub timers: Arc<TimerService>,
     pub inbox: Arc<InboxService>,
     pub rules: Arc<AutomationService>,
+    pub channels: Arc<ChannelService>,
     pub ai: Arc<dyn AiRepository>,
 }
 
@@ -774,12 +778,19 @@ fn catalog() -> Vec<ToolSpec> {
         ),
         spec(
             "draft_automation_rule",
-            "Propose an automation rule. It is only created if the user confirms. Triggers: task_created, task_moved {to_column_kind?: backlog|active|done, to_column_id?}, task_completed, timer_ended, inbox_added, schedule {time: HH:MM, days: [1-7], timezone}. Actions: create_task {column_id, title, description?}, create_note {title, body}, move_task {column_id}, start_timer {timer_kind: pomodoro|countdown, minutes, label?}, notify {title, body?}.",
+            "Propose an automation rule. It is only created if the user confirms. Triggers: task_created, task_moved {to_column_kind?: backlog|active|done, to_column_id?}, task_completed, timer_ended, inbox_added, schedule {time: HH:MM, days: [1-7], timezone}. `actions` is the chain of steps (1 to 10) that run in order; a failing step stops the chain. Step kinds: create_task {column_id, title, description?}, create_note {title, body}, move_task {column_id}, start_timer {timer_kind: pomodoro|countdown, minutes, label?}, notify {title, body?}, send_notification {channel: <channel name>}. Text fields may use {{title}}, {{date}}, {{rule.name}}, {{trigger}}, {{task.title}}, {{timer.label}}, {{inbox.text}}. For send_notification use a channel name returned by list_notification_channels; the channel's own template is used (you cannot create or change channels).",
             obj(
-                json!({ "name": { "type": "string" }, "trigger": { "type": "object" }, "action": { "type": "object" } }),
-                &["name", "trigger", "action"],
+                json!({ "name": { "type": "string" }, "trigger": { "type": "object" }, "actions": { "type": "array", "minItems": 1, "maxItems": 10, "items": { "type": "object" } }, "action": { "type": "object", "description": "Shortcut for a single step; prefer `actions`." } }),
+                &["name", "trigger"],
             ),
             true,
+            None,
+        ),
+        spec(
+            "list_notification_channels",
+            "List the user's notification channels (name and kind only) that an automation rule can send to with a send_notification step. Tokens and webhook URLs are never available.",
+            obj(json!({}), &[]),
+            false,
             None,
         ),
         // ----- planning (read) -----
@@ -1193,6 +1204,17 @@ impl Tools {
                     "updated_at": local_iso(&n.note.updated_at, tz),
                 }))
             }
+            "list_notification_channels" => {
+                let channels: Vec<Value> = self
+                    .d
+                    .channels
+                    .list()
+                    .await?
+                    .iter()
+                    .map(|c| json!({ "name": c.name, "kind": c.kind.as_str() }))
+                    .collect();
+                Ok(json!({ "channels": channels }))
+            }
             "get_inbox" => {
                 let a: Limit = args(input)?;
                 let items: Vec<Value> = self
@@ -1418,6 +1440,46 @@ impl Tools {
                 done("automation_rule", &r.id, &r.name)
             }
         })
+    }
+
+    /// A `send_notification {channel: <name>}` step becomes `{channel_id: <id>}`; every other step is
+    /// returned unchanged. The second value is what the confirmation preview shows (the name).
+    async fn resolve_channel_step(&self, step: &Value) -> DomainResult<(Value, Value)> {
+        if step.get("kind").and_then(Value::as_str) != Some("send_notification") {
+            return Ok((step.clone(), step.clone()));
+        }
+        let Some(name) = step.get("channel").and_then(Value::as_str) else {
+            return Err(invalid(
+                "send_notification needs `channel` (a channel name from list_notification_channels)",
+            ));
+        };
+        if step.as_object().is_some_and(|o| o.len() > 2) {
+            return Err(invalid("send_notification takes only `channel`"));
+        }
+        match self.d.channels.find_by_name(name).await? {
+            Some(c) => Ok((
+                json!({ "kind": "send_notification", "channel_id": c.id }),
+                json!({ "kind": "send_notification", "channel": c.name }),
+            )),
+            None => {
+                let names: Vec<String> = self
+                    .d
+                    .channels
+                    .list()
+                    .await?
+                    .into_iter()
+                    .map(|c| c.name)
+                    .collect();
+                Err(invalid(if names.is_empty() {
+                    "there is no notification channel with that name; the user has not created any (channels are set up in Settings)".to_string()
+                } else {
+                    format!(
+                        "there is no notification channel named “{name}”; available: {}",
+                        names.join(", ")
+                    )
+                }))
+            }
+        }
     }
 
     /// Merged busy intervals (events only; tasks are not busy time) in `[from, to)`.
@@ -2298,27 +2360,55 @@ impl Tools {
             }
             "draft_automation_rule" => {
                 let a: DraftRuleArgs = args(input)?;
+                let steps: Vec<Value> = match (a.actions, a.action) {
+                    (Some(list), None) => list,
+                    (None, Some(one)) => vec![one],
+                    (None, None) => return Err(invalid("give `actions` (the steps of the rule)")),
+                    (Some(_), Some(_)) => {
+                        return Err(invalid("give either `actions` or `action`, not both"));
+                    }
+                };
+                // The model names channels; ids never pass through it. Resolve here so the
+                // preview, validation and apply all work on real channels.
+                let mut resolved = Vec::with_capacity(steps.len());
+                let mut shown = Vec::with_capacity(steps.len());
+                for step in &steps {
+                    let (step, label) = self.resolve_channel_step(step).await?;
+                    resolved.push(
+                        serde_json::from_value(step)
+                            .map_err(|e| invalid(format!("invalid action: {e}")))?,
+                    );
+                    shown.push(label);
+                }
                 let rule = RuleInput {
                     name: a.name,
                     enabled: Some(true),
                     trigger: serde_json::from_value(a.trigger.clone())
                         .map_err(|e| invalid(format!("invalid trigger: {e}")))?,
-                    action: serde_json::from_value(a.action.clone())
-                        .map_err(|e| invalid(format!("invalid action: {e}")))?,
+                    actions: resolved,
                 };
                 AutomationService::validate(&rule)?;
                 let show = |v: &Value| serde_json::to_string(v).unwrap_or_default();
+                let mut changes = vec![change("Trigger", None, Some(show(&a.trigger)))];
+                let n = shown.len();
+                for (i, label) in shown.iter().enumerate() {
+                    let heading = if n == 1 {
+                        "Action".to_string()
+                    } else {
+                        format!("Then {}", i + 1)
+                    };
+                    changes.push(change(&heading, None, Some(show(label))));
+                }
                 Ok(Plan {
                     preview: Preview {
                         summary: format!(
-                            "Create automation rule “{}” (enabled once confirmed)",
-                            rule.name.trim()
+                            "Create automation rule “{}” with {} step{} (enabled once confirmed)",
+                            rule.name.trim(),
+                            n,
+                            if n == 1 { "" } else { "s" }
                         ),
                         destructive: false,
-                        changes: vec![
-                            change("Trigger", None, Some(show(&a.trigger))),
-                            change("Action", None, Some(show(&a.action))),
-                        ],
+                        changes,
                     },
                     action: Action::Rule(rule),
                 })

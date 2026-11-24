@@ -87,6 +87,42 @@ impl RecordingNotifier {
     }
 }
 
+/// Records remote messages instead of sending them; can be told to fail.
+#[derive(Default)]
+pub struct FakeSender {
+    pub sent: Mutex<Vec<(String, String)>>,
+    pub fail_with: Mutex<Option<String>>,
+}
+#[async_trait::async_trait]
+impl crate::infrastructure::channels::ChannelSender for FakeSender {
+    async fn send(
+        &self,
+        target: &crate::infrastructure::channels::Target,
+        text: &str,
+    ) -> crate::error::DomainResult<()> {
+        use crate::infrastructure::channels::Target;
+        if let Some(e) = self.fail_with.lock().unwrap().clone() {
+            return Err(crate::error::DomainError::External(e));
+        }
+        let to = match target {
+            Target::Telegram { token, chat_id } => format!("telegram:{chat_id}:{token}"),
+            Target::Discord { webhook_url } => format!("discord:{webhook_url}"),
+        };
+        self.sent.lock().unwrap().push((to, text.to_string()));
+        Ok(())
+    }
+}
+impl FakeSender {
+    pub fn texts(&self) -> Vec<String> {
+        self.sent
+            .lock()
+            .unwrap()
+            .iter()
+            .map(|m| m.1.clone())
+            .collect()
+    }
+}
+
 pub struct P2 {
     pub pool: SqlitePool,
     pub now: Arc<Mutex<DateTime<Utc>>>,
@@ -98,6 +134,9 @@ pub struct P2 {
     pub timers: Arc<TimerService>,
     pub inbox: Arc<InboxService>,
     pub rules: Arc<AutomationService>,
+    pub channels: Arc<ChannelService>,
+    pub secrets: Arc<crate::infrastructure::channels::MemoryChannelSecrets>,
+    pub sender: Arc<FakeSender>,
     pub engine: Arc<AutomationEngine>,
     pub scheduler: Scheduler,
     pub notifier: Arc<RecordingNotifier>,
@@ -180,11 +219,21 @@ pub async fn p2() -> P2 {
     let rules = Arc::new(AutomationService::new(Arc::new(
         SqliteAutomationRepository::new(pool.clone()),
     )));
+    let secrets = Arc::new(crate::infrastructure::channels::MemoryChannelSecrets::default());
+    let sender = Arc::new(FakeSender::default());
+    let channels = Arc::new(ChannelService::new(
+        Arc::new(SqliteChannelRepository::new(pool.clone())),
+        secrets.clone(),
+        sender.clone(),
+        notifier.clone(),
+        clock.clone(),
+    ));
     let engine = Arc::new(AutomationEngine::new(
         rules.clone(),
         tasks.clone(),
         notes.clone(),
         timers.clone(),
+        channels.clone(),
         notifier.clone(),
         clock.clone(),
     ));
@@ -213,6 +262,9 @@ pub async fn p2() -> P2 {
         timers,
         inbox,
         rules,
+        channels,
+        secrets,
+        sender,
         engine,
         scheduler,
         notifier,

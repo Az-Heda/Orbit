@@ -6,6 +6,7 @@ mod automation_engine;
 mod automation_service;
 mod backup_service;
 mod calendar_service;
+mod channel_service;
 mod external_calendar_service;
 mod inbox_service;
 mod note_service;
@@ -28,6 +29,7 @@ pub use backup_service::{BackupInfo, BackupService, BackupStatus, apply_pending_
 pub use calendar_service::{
     CalendarService, CreateEventInput, OverrideInput, UpdateEventInput, ensure_editable,
 };
+pub use channel_service::ChannelService;
 pub use external_calendar_service::ExternalCalendarService;
 pub use inbox_service::InboxService;
 pub use note_service::{NoteDetail, NoteService};
@@ -52,6 +54,8 @@ mod kanban_tests;
 mod notes_search_tests;
 #[cfg(test)]
 mod phase2_tests;
+#[cfg(test)]
+mod phase6_tests;
 #[cfg(test)]
 mod stats_tests;
 #[cfg(test)]

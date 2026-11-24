@@ -13,7 +13,8 @@ pub struct RuleInput {
     pub name: String,
     pub enabled: Option<bool>,
     pub trigger: Trigger,
-    pub action: Action,
+    /// The chain: 1 to 10 steps, run in order.
+    pub actions: Vec<Action>,
 }
 
 /// CRUD for automation rules. A rule the AI drafts is only created after the user confirms the
@@ -27,47 +28,28 @@ impl AutomationService {
         Self { repo }
     }
 
-    fn write<'a>(
-        name: &'a str,
-        enabled: bool,
-        trigger: &'a Trigger,
-        action: &'a Action,
-        t: &'a str,
-        a: &'a str,
-    ) -> RuleWrite<'a> {
-        RuleWrite {
-            name,
-            enabled,
-            trigger_kind: trigger.kind(),
-            trigger_config: t,
-            action_kind: action.kind(),
-            action_config: a,
-        }
-    }
-
     /// Validate a rule without saving it.
     pub fn validate(input: &RuleInput) -> DomainResult<()> {
         clean_text(&input.name, "name", 120)?;
         input.trigger.validate()?;
-        input.action.validate()
+        Action::validate_chain(&input.actions)
     }
 
     async fn save(&self, id: Option<&str>, input: RuleInput, actor: Actor) -> DomainResult<Rule> {
         let name = clean_text(&input.name, "name", 120)?;
         input.trigger.validate()?;
-        input.action.validate()?;
+        Action::validate_chain(&input.actions)?;
         let t = serde_json::to_string(&input.trigger)
             .map_err(|e| DomainError::Storage(e.to_string()))?;
-        let a = serde_json::to_string(&input.action)
+        let a = serde_json::to_string(&input.actions)
             .map_err(|e| DomainError::Storage(e.to_string()))?;
-        let w = Self::write(
-            &name,
-            input.enabled.unwrap_or(true),
-            &input.trigger,
-            &input.action,
-            &t,
-            &a,
-        );
+        let w = RuleWrite {
+            name: &name,
+            enabled: input.enabled.unwrap_or(true),
+            trigger_kind: input.trigger.kind(),
+            trigger_config: &t,
+            actions: &a,
+        };
         let row = match id {
             None => self.repo.create(&w, actor).await?,
             Some(id) => self.repo.update(id, &w, actor).await?,
@@ -101,7 +83,7 @@ impl AutomationService {
                 name: cur.name,
                 enabled: Some(enabled),
                 trigger: cur.trigger,
-                action: cur.action,
+                actions: cur.actions,
             },
             actor,
         )
@@ -119,6 +101,17 @@ impl AutomationService {
             .into_iter()
             .map(|r| r.into_rule())
             .collect()
+    }
+
+    /// A step failed: the chain stopped there. Best effort (a logging failure must not matter).
+    pub async fn log_step_failure(&self, rule_id: &str, step: usize, action: &Action, error: &str) {
+        if let Err(e) = self
+            .repo
+            .log_step_failure(rule_id, step, action.kind(), error)
+            .await
+        {
+            tracing::warn!("cannot log failed step: {e}");
+        }
     }
 
     pub async fn list_enabled(&self) -> DomainResult<Vec<Rule>> {

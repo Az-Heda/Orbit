@@ -60,7 +60,13 @@ pub enum Action {
         #[serde(default)]
         body: Option<String>,
     },
+    /// Sends the channel's message template, rendered with the trigger's data. The channel is
+    /// referenced by id (it survives renames); its token/webhook never appears in a rule.
+    SendNotification { channel_id: String },
 }
+
+/// A rule runs at most this many steps (a chain).
+pub const MAX_STEPS: usize = 10;
 
 impl Trigger {
     pub fn kind(&self) -> &'static str {
@@ -142,6 +148,7 @@ impl Action {
             Action::MoveTask { .. } => "move_task",
             Action::StartTimer { .. } => "start_timer",
             Action::Notify { .. } => "notify",
+            Action::SendNotification { .. } => "send_notification",
         }
     }
 
@@ -177,6 +184,26 @@ impl Action {
             Action::Notify { title, .. } => {
                 clean_text(title, "notification title", 120)?;
             }
+            Action::SendNotification { channel_id } => {
+                parse_uuid(channel_id, "channel id")?;
+            }
+        }
+        Ok(())
+    }
+
+    /// Validate an ordered chain: 1..=MAX_STEPS steps, each valid.
+    pub fn validate_chain(actions: &[Action]) -> DomainResult<()> {
+        if actions.is_empty() {
+            return Err(invalid("a rule needs at least one step"));
+        }
+        if actions.len() > MAX_STEPS {
+            return Err(invalid(format!(
+                "a rule can have at most {MAX_STEPS} steps"
+            )));
+        }
+        for (i, a) in actions.iter().enumerate() {
+            a.validate()
+                .map_err(|e| invalid(format!("step {}: {e}", i + 1)))?;
         }
         Ok(())
     }
@@ -190,13 +217,14 @@ pub struct RuleRow {
     pub enabled: bool,
     pub trigger_kind: String,
     pub trigger_config: String,
-    pub action_kind: String,
-    pub action_config: String,
+    /// JSON array of actions (the chain, in order).
+    pub actions: String,
     pub created_at: String,
     pub updated_at: String,
 }
 
-pub const RULE_COLS: &str = "id, name, enabled, trigger_kind, trigger_config, action_kind, action_config, created_at, updated_at";
+pub const RULE_COLS: &str =
+    "id, name, enabled, trigger_kind, trigger_config, actions, created_at, updated_at";
 
 #[derive(Debug, Clone, Serialize)]
 pub struct Rule {
@@ -204,7 +232,8 @@ pub struct Rule {
     pub name: String,
     pub enabled: bool,
     pub trigger: Trigger,
-    pub action: Action,
+    /// The chain: steps run in order; a failing step is logged and stops the chain.
+    pub actions: Vec<Action>,
     pub created_at: String,
     pub updated_at: String,
 }
@@ -216,7 +245,7 @@ impl RuleRow {
         };
         Ok(Rule {
             trigger: serde_json::from_str(&self.trigger_config).map_err(|_| bad("trigger"))?,
-            action: serde_json::from_str(&self.action_config).map_err(|_| bad("action"))?,
+            actions: serde_json::from_str(&self.actions).map_err(|_| bad("actions"))?,
             id: self.id,
             name: self.name,
             enabled: self.enabled,
@@ -231,6 +260,70 @@ pub fn render(template: &str, title: &str, date: &str) -> String {
     template
         .replace("{{title}}", title)
         .replace("{{date}}", date)
+}
+
+/// Everything a template can refer to. Unknown placeholders are left as they are; known ones with
+/// no value (e.g. `{{task.title}}` on a timer trigger) become empty text.
+#[derive(Debug, Clone, Default)]
+pub struct RenderCtx {
+    /// The triggering item's headline (task title, timer label, first line of an inbox item).
+    pub title: String,
+    /// UTC date, `YYYY-MM-DD`.
+    pub date: String,
+    pub rule_name: String,
+    /// Trigger kind, e.g. `task_moved`.
+    pub trigger: String,
+    pub task_title: String,
+    pub timer_label: String,
+    pub inbox_text: String,
+}
+
+/// Placeholders understood by `RenderCtx::render` (shown in the UI).
+pub const PLACEHOLDERS: &[&str] = &[
+    "{{title}}",
+    "{{date}}",
+    "{{rule.name}}",
+    "{{trigger}}",
+    "{{task.title}}",
+    "{{timer.label}}",
+    "{{inbox.text}}",
+];
+
+impl RenderCtx {
+    /// One pass over the template, so a value that itself contains `{{...}}` is never re-expanded.
+    pub fn render(&self, template: &str) -> String {
+        let mut out = String::with_capacity(template.len());
+        let mut rest = template;
+        while let Some(start) = rest.find("{{") {
+            out.push_str(&rest[..start]);
+            let after = &rest[start..];
+            let Some(end) = after.find("}}") else {
+                out.push_str(after);
+                return out;
+            };
+            let key = &after[2..end];
+            match self.value(key.trim()) {
+                Some(v) => out.push_str(v),
+                None => out.push_str(&after[..end + 2]),
+            }
+            rest = &after[end + 2..];
+        }
+        out.push_str(rest);
+        out
+    }
+
+    fn value(&self, key: &str) -> Option<&str> {
+        Some(match key {
+            "title" => &self.title,
+            "date" => &self.date,
+            "rule.name" => &self.rule_name,
+            "trigger" => &self.trigger,
+            "task.title" => &self.task_title,
+            "timer.label" => &self.timer_label,
+            "inbox.text" => &self.inbox_text,
+            _ => return None,
+        })
+    }
 }
 
 #[cfg(test)]
@@ -271,5 +364,50 @@ mod tests {
             render("Done: {{title}} on {{date}}", "X", "2026-01-01"),
             "Done: X on 2026-01-01"
         );
+    }
+
+    #[test]
+    fn chain_validation() {
+        let note = Action::CreateNote {
+            title: "t".into(),
+            body: String::new(),
+        };
+        assert!(Action::validate_chain(&[]).is_err(), "empty chain");
+        assert!(Action::validate_chain(std::slice::from_ref(&note)).is_ok());
+        assert!(Action::validate_chain(&vec![note.clone(); MAX_STEPS + 1]).is_err());
+        let bad = Action::MoveTask {
+            column_id: "nope".into(),
+        };
+        let e = Action::validate_chain(&[note, bad])
+            .unwrap_err()
+            .to_string();
+        assert!(e.contains("step 2"), "{e}");
+        assert!(
+            Action::SendNotification {
+                channel_id: "nope".into()
+            }
+            .validate()
+            .is_err()
+        );
+    }
+
+    #[test]
+    fn render_context_placeholders() {
+        let ctx = RenderCtx {
+            title: "Ship {{rule.name}}".into(),
+            date: "2026-01-01".into(),
+            rule_name: "Daily".into(),
+            trigger: "task_moved".into(),
+            task_title: "Write docs".into(),
+            ..Default::default()
+        };
+        assert_eq!(
+            ctx.render(
+                "[{{rule.name}}] {{ task.title }} / {{timer.label}} / {{unknown}} / {{title}}"
+            ),
+            "[Daily] Write docs /  / {{unknown}} / Ship {{rule.name}}",
+            "values are not re-expanded, unknown placeholders stay"
+        );
+        assert_eq!(ctx.render("open {{brace"), "open {{brace");
     }
 }

@@ -8,6 +8,7 @@
   import AiSettings from "$lib/components/AiSettings.svelte";
   import CalendarFeeds from "$lib/components/CalendarFeeds.svelte";
   import DataSettings from "$lib/components/DataSettings.svelte";
+  import NotificationChannels from "$lib/components/NotificationChannels.svelte";
   import UpdateSettings from "$lib/components/UpdateSettings.svelte";
   import { theme } from "$lib/stores/theme.svelte";
   import { PRESETS, type ThemeMode } from "$lib/theme";
@@ -241,6 +242,8 @@
   <AiSettings />
 
   <CalendarFeeds />
+
+  <NotificationChannels />
 
   <DataSettings />
 
